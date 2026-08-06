@@ -36,8 +36,10 @@ class Money:
     def minus(self, other: "Money") -> "Money":
         return Money(self._amount - other._amount)
 
-    def times(self, quantity: int) -> "Money":
-        return Money(self._amount * quantity)
+    def times(self, factor: Numeric) -> "Money":
+        """Scale by an int quantity (line-item multiplication) or a
+        Decimal/str factor (e.g. a discount multiplier like '0.90')."""
+        return Money(self._amount * Decimal(str(factor)))
 
     def is_negative(self) -> bool:
         return self._amount < 0

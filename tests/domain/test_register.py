@@ -1,6 +1,13 @@
 import pytest
 
 from supermarket_pos.domain.common.money import Money
+from supermarket_pos.domain.payment.gateway.airtel_money_adapter import AirtelMoneyAdapter
+from supermarket_pos.domain.payment.gateway.card_processor_adapter import CardProcessorAdapter
+from supermarket_pos.domain.payment.gateway.mtn_momo_adapter import MTNMoMoAdapter
+from supermarket_pos.domain.payment.gateway.unknown_payment_provider_error import (
+    UnknownPaymentProviderError,
+)
+from supermarket_pos.domain.payment.payment_declined_error import PaymentDeclinedError
 from supermarket_pos.domain.product.exceptions import ProductNotFoundError
 from supermarket_pos.domain.product.product_description import ProductDescription
 from supermarket_pos.domain.store import Store
@@ -57,3 +64,95 @@ def test_each_new_sale_starts_with_a_clean_total(store):
 
     register.make_new_sale()
     assert register.current_sale.get_total() == Money("0.00")
+
+
+def test_process_sale_mobile_money_happy_path_produces_correct_change_and_logs_sale(store):
+    register = store.register
+    register.make_new_sale()
+    register.enter_item("SKU-001", 1)
+    register.end_sale()
+
+    change = register.make_mobile_money_payment("mtn", "0977123456", Money("85.00"))
+
+    assert change == Money("0.00")
+    assert len(store.completed_sales) == 1
+
+
+def test_process_sale_card_happy_path_produces_correct_change_and_logs_sale(store):
+    register = store.register
+    register.make_new_sale()
+    register.enter_item("SKU-001", 2)
+    register.end_sale()
+
+    change = register.make_card_payment("4111111111111111", Money("170.00"))
+
+    assert change == Money("0.00")
+    assert len(store.completed_sales) == 1
+
+
+def test_declined_mobile_money_payment_raises_and_does_not_log_sale(store):
+    register = store.register
+    register.make_new_sale()
+    register.enter_item("SKU-001", 1)
+    register.end_sale()
+
+    with pytest.raises(PaymentDeclinedError):
+        register.make_mobile_money_payment(
+            "mtn", MTNMoMoAdapter.DECLINE_TEST_MSISDN, Money("85.00")
+        )
+
+    assert len(store.completed_sales) == 0
+
+
+def test_declined_airtel_payment_raises_payment_declined_error(store):
+    register = store.register
+    register.make_new_sale()
+    register.enter_item("SKU-001", 1)
+    register.end_sale()
+
+    with pytest.raises(PaymentDeclinedError):
+        register.make_mobile_money_payment(
+            "airtel", AirtelMoneyAdapter.DECLINE_TEST_MSISDN, Money("85.00")
+        )
+
+
+def test_declined_card_payment_raises_payment_declined_error(store):
+    register = store.register
+    register.make_new_sale()
+    register.enter_item("SKU-001", 1)
+    register.end_sale()
+
+    with pytest.raises(PaymentDeclinedError):
+        register.make_card_payment(
+            CardProcessorAdapter.DECLINE_TEST_CARD_REFERENCE, Money("85.00")
+        )
+
+
+def test_cashier_can_retry_with_a_different_payment_method_after_a_decline(store):
+    """Realizes UC1's 'Customer says they intended to pay by X but it's
+    declined; Cashier asks for alternate payment' extension: a decline
+    must not lock out the sale or double-log it."""
+    register = store.register
+    register.make_new_sale()
+    register.enter_item("SKU-001", 1)
+    register.end_sale()
+
+    with pytest.raises(PaymentDeclinedError):
+        register.make_mobile_money_payment(
+            "mtn", MTNMoMoAdapter.DECLINE_TEST_MSISDN, Money("85.00")
+        )
+
+    change = register.make_cash_payment(Money("100.00"))
+
+    assert change == Money("15.00")
+    assert len(store.completed_sales) == 1
+
+
+def test_unknown_mobile_money_provider_raises(store):
+    register = store.register
+    register.make_new_sale()
+    register.enter_item("SKU-001", 1)
+    register.end_sale()
+
+    with pytest.raises(UnknownPaymentProviderError):
+        register.make_mobile_money_payment("zamtel-kwacha", "0977123456", Money("85.00"))

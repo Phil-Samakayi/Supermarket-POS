@@ -5,7 +5,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
 from supermarket_pos.domain.common.money import Money
+from supermarket_pos.domain.payment.card_payment import CardPayment
 from supermarket_pos.domain.payment.cash_payment import CashPayment
+from supermarket_pos.domain.payment.electronic_payment import ElectronicPayment
+from supermarket_pos.domain.payment.gateway.payment_gateway_factory import PaymentGatewayFactory
+from supermarket_pos.domain.payment.mobile_money_payment import MobileMoneyPayment
+from supermarket_pos.domain.payment.payment_declined_error import PaymentDeclinedError
 from supermarket_pos.domain.product.product_catalog import ProductCatalog
 from supermarket_pos.domain.product.product_description import ProductDescription
 from supermarket_pos.domain.sales.sale import Sale
@@ -27,18 +32,34 @@ class LineItemResult:
 class Register:
     """
     GRASP: Controller for the system operations implied by UC1's SSDs
-    (make_new_sale, enter_item, end_sale, make_cash_payment) — see
+    (make_new_sale, enter_item, end_sale, make_cash_payment,
+    make_mobile_money_payment, make_card_payment) — see
     docs/Supermarket_POS_UseCase_UML.docx, Section 4.
 
-    Iteration-1: cash payment only. Iteration-2 will route payment
-    through a PaymentServiceProxy that also supports mobile money and
-    card, without changing the shape of this class's public methods.
+    Iteration-2: mobile money and card payments are authorized through
+    IPaymentGatewayAdapter implementations resolved via
+    PaymentGatewayFactory (GoF Adapter + Factory, Larman Ch.26).
+    Register never constructs a concrete adapter itself — Low Coupling
+    is preserved because adding a new provider only means editing the
+    factory, not this class.
+
+    A GatewayUnavailableError (the gateway couldn't be reached at all)
+    is deliberately *not* caught here yet — that failover/offline-queue
+    behavior belongs to the PaymentServiceProxy planned next in
+    Iteration 2 (see docs/ITERATIONS.md), so it isn't duplicated once
+    that Proxy exists.
     """
 
-    def __init__(self, store: "Store", catalog: ProductCatalog) -> None:
+    def __init__(
+        self,
+        store: "Store",
+        catalog: ProductCatalog,
+        payment_gateway_factory: Optional[PaymentGatewayFactory] = None,
+    ) -> None:
         self._store = store
         self._catalog = catalog
         self._current_sale: Optional[Sale] = None
+        self._payment_gateway_factory = payment_gateway_factory or PaymentGatewayFactory.get_instance()
 
     def make_new_sale(self) -> None:
         self._current_sale = Sale()
@@ -58,6 +79,33 @@ class Register:
 
     def make_cash_payment(self, amount_tendered: Money) -> Money:
         payment = CashPayment(amount_tendered)
+        self._current_sale.make_payment(payment)
+        self._store.log_completed_sale(self._current_sale)
+        return self._current_sale.get_balance()
+
+    def make_mobile_money_payment(
+        self, provider: str, phone_number: str, amount_tendered: Money
+    ) -> Money:
+        """Realizes UC1 extension 9b (paying by mobile money). Raises
+        PaymentDeclinedError if the provider declines; propagates
+        UnknownPaymentProviderError for an unrecognized provider name
+        and GatewayUnavailableError if the gateway can't be reached."""
+        adapter = self._payment_gateway_factory.get_mobile_money_adapter(provider)
+        payment = MobileMoneyPayment(amount_tendered, adapter, phone_number, provider)
+        return self._authorize_and_complete(payment)
+
+    def make_card_payment(self, card_reference: str, amount_tendered: Money) -> Money:
+        """Realizes UC1 extension 9c (paying by card). Raises
+        PaymentDeclinedError if the card is declined; propagates
+        GatewayUnavailableError if the gateway can't be reached."""
+        adapter = self._payment_gateway_factory.get_card_adapter()
+        payment = CardPayment(amount_tendered, adapter, card_reference)
+        return self._authorize_and_complete(payment)
+
+    def _authorize_and_complete(self, payment: ElectronicPayment) -> Money:
+        result = payment.authorize()
+        if not result.approved:
+            raise PaymentDeclinedError(result.message)
         self._current_sale.make_payment(payment)
         self._store.log_completed_sale(self._current_sale)
         return self._current_sale.get_balance()

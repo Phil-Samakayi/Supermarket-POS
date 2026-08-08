@@ -118,7 +118,27 @@ retroactively.
   business-rule decision (block/warn/allow oversell?) that deserves
   its own slice, not a quiet addition here. See
   [ARCHITECTURE.md § Manage Inventory](ARCHITECTURE.md#manage-inventory).
-- Manage Users use case.
+- ✅ Manage Users (and Authenticate User): `User`/`UserRole`,
+  `PasswordHasher` (PBKDF2-HMAC-SHA256, stdlib only — see
+  ARCHITECTURE.md for the trade-off), `UserManager` — a **third
+  separate Controller** (System Administrator actor), and
+  `AuthenticationService` realizing "Authenticate User" as its own
+  reusable subfunction (Larman Ch.6.16), not folded into `UserManager`.
+  Exposed as `store.users` / `store.authenticate()`. **Authentication
+  is not yet a precondition of any other operation** — Process
+  Sale/Handle Returns/Manage Inventory can all still run with no
+  logged-in user, a deliberate scope cut mirroring three earlier ones
+  this iteration. See
+  [ARCHITECTURE.md § Manage Users](ARCHITECTURE.md#manage-users-and-authenticate-user).
 
-**Current test count:** 183/183 passing on a fresh install (as of the
-Manage Inventory slice).
+**Iteration 3 is now complete.** Every planned item has a slice:
+persistence (product catalog + sale/return history), Handle Returns
+(cash-only), Reporting (sales/returns), Manage Inventory, Manage
+Users. Several deliberate follow-ups were flagged along the way
+(electronic refunds, original-sale-linked returns, automatic stock
+adjustment on sale/return, authentication as a precondition) — none
+forgotten, all named explicitly in ARCHITECTURE.md rather than quietly
+skipped.
+
+**Current test count:** 219/219 passing on a fresh install (as of the
+Manage Users slice).

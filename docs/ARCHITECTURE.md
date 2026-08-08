@@ -714,3 +714,140 @@ not "does Register already exist" but "whose use case is this."
   project has consistently avoided (see Handle Returns' and
   Reporting's own Alternatives Considered for the same judgment call
   made twice already). Flagged explicitly instead.
+
+---
+
+### Manage Users (and Authenticate User)
+
+**Issue:** This is the first slice where the book gives real, directly
+applicable material rather than a passing mention. Ch.6.11 gives the
+essential-style scenario for identification/authentication:
+
+> 1. Administrator identifies self.
+> 2. System authenticates identity.
+
+Ch.6.15 gives the CRUD-collapsing naming convention already used
+throughout this project ("Manage <X>"). And Ch.6.16 is explicit that
+Authenticate User is a *subfunction* use case, not a standalone goal:
+"Authenticate User may not pass the Boss test, but be complex enough
+to warrant careful analysis, such as for a 'single sign-on' feature" —
+i.e. it's meant to be `include`d by other base use cases (Process
+Sale, Handle Returns, Manage Inventory), not duplicated into each.
+The book's own actor list also separately names a "System
+administrator: manage users, manage security, manage system tables" —
+a fourth distinct actor from Cashier and Manager/Owner.
+
+**Solution Summary:** `User`/`UserRole` (domain/users/), a
+`PasswordHasher` (PBKDF2-HMAC-SHA256, stdlib only), `UserManager` — a
+**third separate Controller**, Administrator-gated — and
+`AuthenticationService`, deliberately its own class realizing the
+subfunction use case, not folded into `UserManager`.
+
+**Factors:**
+- Real authentication needs a real password-hashing scheme, not just
+  an abstract "authenticate" method — but the book's essential-style
+  guidance is explicitly about how to *write use case text*, not a
+  ban on the implementation having concrete mechanism (its own
+  concrete-style contrast example shows "ID and password" as the
+  eventual realization).
+- A completely fresh system has no users at all — `UserManager`'s
+  mutating operations require an acting Administrator, so *something*
+  has to create the first one without that precondition being
+  satisfiable.
+- This project's test suite has stayed fast (well under a second)
+  through every prior slice; a naive password hash at a real
+  production iteration count costs ~130ms per call, which would have
+  visibly slowed the suite the moment more than a handful of tests
+  touched it.
+- Authenticate User is explicitly framed by the book as reusable
+  across several base use cases — its design should reflect that
+  (one shared collaborator), not anticipate it being copied.
+
+**Solution:** `PasswordHasher` stores one self-describing string per
+password (`pbkdf2_sha256$<iterations>$<salt>$<digest>`, the same
+approach Django's password hashers use) rather than separate
+hash/salt fields — this means the iteration count actually used is
+always read back from the hash itself at verify time, so tests can
+safely pass a much lower `iterations` value for speed with zero risk
+of a hash/verify mismatch, and a future increase to the production
+default doesn't invalidate already-stored hashes. Verification uses
+`hmac.compare_digest` (constant-time) rather than `==`.
+
+The bootstrap problem is solved with a dedicated, one-time
+`UserManager.bootstrap_administrator()` — works only while zero users
+exist, raises `AdministratorAlreadyExistsError` otherwise, so it can't
+be called again later as a backdoor once real accounts exist. Every
+other mutating `UserManager` operation requires an `acting_user` whose
+role is `ADMINISTRATOR` (`NotAuthorizedError` otherwise) — the "manage
+security" half of the System administrator's named responsibility,
+not just CRUD plumbing.
+
+`AuthenticationService` is a separate class from `UserManager`,
+wrapping it rather than being part of it — different callers (every
+operational use case needs authentication, frequently; `UserManager`'s
+CRUD is Administrator-only, occasional) is the same reasoning Larman
+gives for pulling a repeated subfunction into its own `include`d use
+case rather than duplicating it. `authenticate()` deliberately returns
+the identical error and message for "unknown username" and "wrong
+password" — never revealing which, since either failure branch
+returning something different would let a caller enumerate valid
+usernames one attempt at a time.
+
+`Store` exposes `store.users` (`UserManager`) and `store.authenticate()`
+(delegating to `AuthenticationService`) — the same thin-coordinator
+role Store already plays for `InventoryManager` and persistence.
+
+**Motivation:** Three actors now have three separate Controllers
+(`Register` for Cashier, `InventoryManager` for Manager/Owner,
+`UserManager` for System Administrator), each introduced for the same
+underlying reason: Larman's Controller guidance (Ch.17) treats "whose
+use case is this" as the deciding factor, not "is there already a
+convenient class to extend." That reasoning, applied consistently
+across three slices now, is what's kept `Register` from growing into
+a catch-all god-object as this project's scope expanded.
+
+**Unresolved Issues:**
+- **Authentication is not yet a precondition of anything.**
+  `Register.make_new_sale()`, `InventoryManager.receive_stock()`, etc.
+  can all still be called with no logged-in user at all — exactly the
+  same "flag the obvious integration, don't rush it" discipline
+  already applied three times (Handle Returns' original-sale link,
+  Reporting's stock summary, Inventory's auto-decrement-on-sale).
+  Wiring this in means deciding a real question first: does Register
+  hold a "current session" concept, does every system operation take
+  an `acting_user`, does a session expire — real design work, not a
+  mechanical addition.
+- PBKDF2 via stdlib, not bcrypt/argon2 — an explicit, documented
+  trade-off for staying dependency-free (see `PasswordHasher`'s own
+  docstring), not a claim of production-grade security.
+- No password complexity/strength requirements enforced anywhere —
+  `create_user`/`reset_password` accept any string.
+- No `edit_user`-style username rename or self-service password
+  change (only an Administrator can reset another user's password) —
+  a Cashier changing their own password isn't supported yet.
+- No session/logout concept at all, since nothing currently holds a
+  "who's logged in" session in the first place (see the first bullet).
+
+**Alternatives Considered:**
+- *Storing password_hash and salt as two separate User fields* —
+  rejected in favor of one self-describing string once the
+  test-speed-vs-correctness tension (see Factors) came up: two
+  separate fields would need the iteration count to live somewhere
+  too, or every verify call would have to assume a matching global
+  default — a real, easy-to-get-wrong correctness bug waiting to
+  happen the moment a test used a different iteration count than
+  production code assumed.
+- *Folding AuthenticationService's logic directly into UserManager* —
+  rejected: conflates an Administrator-gated, occasional CRUD
+  responsibility with a called-by-everyone, frequent one, and
+  contradicts the book's own explicit framing of Authenticate User as
+  its own reusable, `include`d subfunction.
+- *A hardcoded default admin account seeded automatically* — rejected:
+  a hardcoded default credential is a well-known real security
+  anti-pattern (default/blank admin passwords are a classic attack
+  vector); `bootstrap_administrator()` requires an explicit call with
+  an explicit chosen password instead.
+- *Making Register/InventoryManager require an acting_user immediately
+  in this same slice* — rejected for the same "don't rush the obvious
+  next integration" reasoning applied three times already this
+  iteration; see Unresolved Issues.

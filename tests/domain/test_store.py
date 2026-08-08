@@ -1,3 +1,5 @@
+import pytest
+
 from supermarket_pos.domain.common.money import Money
 from supermarket_pos.domain.product.product_description import ProductDescription
 from supermarket_pos.domain.store import Store
@@ -331,3 +333,67 @@ def test_stock_summary_report_reflects_a_sale_only_if_manually_adjusted():
     register.make_cash_payment(Money("100.00"))
 
     assert store.inventory.get_stock_level("SKU-001") == 20
+
+
+# --- Manage Users / Authenticate User --------------------------------------
+
+FAST_ITERATIONS = 1000  # test-speed only, see password_hasher.py
+
+
+def make_fast_store(**kwargs) -> Store:
+    from supermarket_pos.domain.users.user_manager import UserManager
+
+    return Store(
+        "Test Store",
+        "Test Address",
+        user_manager=UserManager(password_hash_iterations=FAST_ITERATIONS),
+        **kwargs,
+    )
+
+
+def test_store_authenticate_delegates_to_authentication_service():
+    store = make_fast_store()
+    store.users.bootstrap_administrator("admin", "adminpass123")
+
+    user = store.authenticate("admin", "adminpass123")
+
+    assert user.username == "admin"
+
+
+def test_store_authenticate_with_wrong_password_raises():
+    from supermarket_pos.domain.users.exceptions import AuthenticationError
+
+    store = make_fast_store()
+    store.users.bootstrap_administrator("admin", "adminpass123")
+
+    with pytest.raises(AuthenticationError):
+        store.authenticate("admin", "wrongpassword")
+
+
+def test_store_users_manager_is_a_separate_controller_from_register():
+    from supermarket_pos.domain.users.user_manager import UserManager
+
+    store = make_fast_store()
+
+    assert isinstance(store.users, UserManager)
+    assert store.users is not store.register
+
+
+def test_users_persist_when_store_has_a_persistence_facade(tmp_path):
+    from supermarket_pos.domain.users.user_manager import UserManager
+
+    facade = build_sqlite_persistence_facade(str(tmp_path / "store.db"))
+    store = Store(
+        "Test Store",
+        "Test Address",
+        persistence_facade=facade,
+        user_manager=UserManager(facade, password_hash_iterations=FAST_ITERATIONS),
+    )
+
+    store.users.bootstrap_administrator("admin", "adminpass123")
+
+    second_manager = UserManager(
+        build_sqlite_persistence_facade(str(tmp_path / "store.db")),
+        password_hash_iterations=FAST_ITERATIONS,
+    )
+    assert second_manager.get_user("admin").username == "admin"

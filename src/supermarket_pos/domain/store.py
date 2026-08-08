@@ -10,6 +10,9 @@ from supermarket_pos.domain.payment.gateway.payment_gateway_factory import Payme
 from supermarket_pos.domain.product.product_catalog import ProductCatalog
 from supermarket_pos.domain.product.product_description import ProductDescription
 from supermarket_pos.domain.register import Register
+from supermarket_pos.domain.users.authentication_service import AuthenticationService
+from supermarket_pos.domain.users.user import User
+from supermarket_pos.domain.users.user_manager import UserManager
 from supermarket_pos.persistence.completed_return_mapper import CompletedReturnMapper
 from supermarket_pos.persistence.completed_return_record import CompletedReturnRecord
 from supermarket_pos.persistence.completed_sale_mapper import CompletedSaleMapper
@@ -60,6 +63,7 @@ class Store:
         persistence_facade: Optional[PersistenceFacade] = None,
         sale_history_mapper: Optional[CompletedSaleMapper] = None,
         return_history_mapper: Optional[CompletedReturnMapper] = None,
+        user_manager: Optional[UserManager] = None,
     ) -> None:
         self._name = name
         self._address = address
@@ -72,6 +76,8 @@ class Store:
         self._return_history_mapper = return_history_mapper
         self._report_generator = SalesReportGenerator()
         self._inventory_manager = InventoryManager(persistence_facade)
+        self._user_manager = user_manager or UserManager(persistence_facade)
+        self._authentication_service = AuthenticationService(self._user_manager)
 
         if self._persistence_facade is not None:
             for description in self._persistence_facade.get_all(ProductDescription):
@@ -151,6 +157,12 @@ class Store:
         first built — no quantity concept existed then."""
         return build_stock_summary_report(self._catalog, self._inventory_manager, low_stock_threshold)
 
+    def authenticate(self, username: str, plain_password: str) -> User:
+        """Realizes Authenticate User (Larman Ch.6.16's subfunction
+        use case). Not yet a precondition of any other operation —
+        see ARCHITECTURE.md's Unresolved Issues for Manage Users."""
+        return self._authentication_service.authenticate(username, plain_password)
+
     @property
     def catalog(self) -> ProductCatalog:
         return self._catalog
@@ -162,6 +174,10 @@ class Store:
     @property
     def inventory(self) -> InventoryManager:
         return self._inventory_manager
+
+    @property
+    def users(self) -> UserManager:
+        return self._user_manager
 
     @property
     def completed_sales(self) -> tuple["Sale", ...]:

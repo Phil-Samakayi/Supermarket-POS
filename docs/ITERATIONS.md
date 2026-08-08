@@ -87,10 +87,21 @@ retroactively.
   existing `Store.completed_sales` is untouched (still this session's
   live `Sale` objects only). See
   [ARCHITECTURE.md § Sale history persistence](ARCHITECTURE.md#sale-history-persistence).
-- Handle Returns use case.
+- ✅ Handle Returns (**cash-refund only** — Larman gives this use case
+  in casual format only, no worked design; scope deliberately narrowed
+  to match the project's own "cash first" precedent from Iteration 1).
+  `SaleReturn` mirrors `Sale`'s shape; `Register` gains
+  `start_return`/`enter_return_item`/`end_return`/`make_cash_refund`;
+  persistence (`CompletedReturnMapper`, `Store.return_history()`)
+  follows the same Ch.38 design as sale history. Electronic refunds
+  (the book's own named extension: "if paid by credit... pay them
+  with cash") and returns linked to their original sale are explicit,
+  documented follow-ups, not built here. See
+  [ARCHITECTURE.md § Handle Returns](ARCHITECTURE.md#handle-returns-cash-refund-only).
 - Reporting for Manager/Owner (sales and stock summaries) — will read
-  from `Store.sale_history()`, not yet built.
+  from `Store.sale_history()` / `Store.return_history()`, not yet
+  built.
 - Manage Inventory / Manage Users use cases.
 
-**Current test count:** 108/108 passing on a fresh install (as of the
-sale-history persistence slice).
+**Current test count:** 132/132 passing on a fresh install (as of the
+Handle Returns cash-refund slice).

@@ -8,11 +8,14 @@ from supermarket_pos.domain.payment.gateway.payment_gateway_factory import Payme
 from supermarket_pos.domain.product.product_catalog import ProductCatalog
 from supermarket_pos.domain.product.product_description import ProductDescription
 from supermarket_pos.domain.register import Register
+from supermarket_pos.persistence.completed_return_mapper import CompletedReturnMapper
+from supermarket_pos.persistence.completed_return_record import CompletedReturnRecord
 from supermarket_pos.persistence.completed_sale_mapper import CompletedSaleMapper
 from supermarket_pos.persistence.completed_sale_record import CompletedSaleRecord
 from supermarket_pos.persistence.persistence_facade import PersistenceFacade
 
 if TYPE_CHECKING:
+    from supermarket_pos.domain.returns.sale_return import SaleReturn
     from supermarket_pos.domain.sales.sale import Sale
 
 
@@ -51,14 +54,17 @@ class Store:
         payment_gateway_factory: Optional[PaymentGatewayFactory] = None,
         persistence_facade: Optional[PersistenceFacade] = None,
         sale_history_mapper: Optional[CompletedSaleMapper] = None,
+        return_history_mapper: Optional[CompletedReturnMapper] = None,
     ) -> None:
         self._name = name
         self._address = address
         self._catalog = ProductCatalog()
         self._register = Register(self, self._catalog, payment_gateway_factory)
         self._completed_sales: list["Sale"] = []
+        self._completed_returns: list["SaleReturn"] = []
         self._persistence_facade = persistence_facade
         self._sale_history_mapper = sale_history_mapper
+        self._return_history_mapper = return_history_mapper
 
         if self._persistence_facade is not None:
             for description in self._persistence_facade.get_all(ProductDescription):
@@ -89,6 +95,19 @@ class Store:
             return []
         return self._sale_history_mapper.get_all()
 
+    def log_completed_return(self, sale_return: "SaleReturn") -> None:
+        self._completed_returns.append(sale_return)
+        if self._return_history_mapper is not None:
+            self._return_history_mapper.save(sale_return)
+
+    def return_history(self) -> List[CompletedReturnRecord]:
+        """Mirrors sale_history() for Handle Returns — durable,
+        persisted history across sessions, distinct from
+        completed_returns (this session's live SaleReturn objects)."""
+        if self._return_history_mapper is None:
+            return []
+        return self._return_history_mapper.get_all()
+
     def sync_offline_payments(self) -> OfflineSyncReport:
         """Replays every mobile money payment that was queued while
         its gateway was unreachable (PaymentServiceProxy, Larman
@@ -108,6 +127,10 @@ class Store:
     @property
     def completed_sales(self) -> tuple["Sale", ...]:
         return tuple(self._completed_sales)
+
+    @property
+    def completed_returns(self) -> tuple["SaleReturn", ...]:
+        return tuple(self._completed_returns)
 
     @property
     def name(self) -> str:

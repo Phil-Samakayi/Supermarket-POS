@@ -403,3 +403,104 @@ actually *for*, not to an abstract ideal of full object-graph fidelity.
   functions (`build_sqlite_persistence_facade`,
   `build_sqlite_sale_history_mapper`) are clearer than one that lies
   about its return shape.
+
+---
+
+### Handle Returns (cash-refund only)
+
+**Issue:** Larman gives Handle Returns only as a *casual*-format use
+case — a paragraph of main scenario plus bullet-point extensions, no
+worked design, unlike Process Sale's fully-dressed treatment
+elsewhere in the book:
+
+> Main Success Scenario: A customer arrives at a checkout with items
+> to return. The cashier uses the POS system to record each returned
+> item...
+>
+> Alternate: If the customer paid by credit, and the reimbursement
+> transaction to their credit account is rejected, inform the
+> customer and pay them with cash.
+
+There's no book section to translate directly — the design decisions
+below are this project's own, guided by GRASP/patterns already
+established rather than a worked example.
+
+**Solution Summary:** A `SaleReturn` domain class mirroring `Sale`'s
+shape (same GRASP roles: Creator of its line items, Information Expert
+for the refund total), `Register` gains a parallel set of system
+operations (`start_return`/`enter_return_item`/`end_return`/
+`make_cash_refund`, mirroring `make_new_sale`/`enter_item`/`end_sale`/
+`make_cash_payment`), and persistence follows the exact same
+Ch.38.9/38.10/38.19 pattern as sale history. Scoped to **cash refunds
+only** this slice, and returns are **not linked to their original
+Sale** — a return's refund uses the current catalog price.
+
+**Factors:**
+- No worked design exists in the book to follow, so the scope needs to
+  be chosen deliberately rather than derived.
+- The extension text explicitly anticipates electronic refunds
+  ("if paid by credit... pay them with cash" as a fallback) — building
+  that now would require reversal/refund operations on
+  `IPaymentGatewayAdapter` that don't exist yet, a materially bigger
+  piece of work than the base case.
+- A return linked to its original `Sale` (refunding the exact
+  discounted amount paid, rather than current price) is a genuinely
+  different, larger feature — it needs a way to look up a prior sale
+  by receipt/reference, which nothing in this codebase does yet.
+
+**Solution:** Followed this project's own established precedent
+exactly: Iteration 1 built cash-only Process Sale before Iteration 2
+added mobile money/card; Handle Returns repeats that shape — cash-only
+first, matching size and risk to what's actually needed now.
+`CashRefund` is a small, separate type (not a `Payment` subclass) since
+"amount tendered" and change-due math don't apply to money paid *out*
+to a customer. `ReturnedLineItem` is priced from the current
+`ProductDescription` via `ProductCatalog` — the same lookup Process
+Sale already uses — rather than any link back to an original sale.
+Persistence (`CompletedReturnMapper`, `CompletedReturnRecord`) is a
+near-exact copy of the sale-history design: one-to-many line items via
+a foreign-key table (Ch.38.19), a read-only snapshot rather than a
+reconstructed live object graph (see Sale history persistence, above),
+`Store.return_history()` kept separate from `Store.completed_returns`
+for the same reasons `sale_history()`/`completed_sales` are separate.
+
+**Motivation:** Given the size of the gap between what the book
+provides (a paragraph) and what a working feature needs, the
+disciplined move was to explicitly narrow scope to the smallest
+genuinely useful slice and say so, rather than either skipping Handle
+Returns entirely or trying to build the fully-general version (linked
+returns + electronic refunds + reversal handling) in one pass. This is
+the same "don't implement all requirements at once" principle the
+project has followed since Iteration 1 — just applied to a feature the
+book itself doesn't walk through.
+
+**Unresolved Issues:**
+- Electronic refunds (mobile money/card reversal), including the
+  book's own explicitly-named fallback-to-cash extension, are not
+  built. `IPaymentGatewayAdapter` would need a `refund()` operation
+  distinct from `authorize()` — a real API shape decision, not just a
+  wiring exercise.
+- Returns aren't linked to an original `Sale`, so a discount applied at
+  sale time isn't reflected in the refund. Doing this properly needs a
+  way to look up a prior sale (by some receipt reference) — nothing in
+  the codebase does that yet, and `sale_history()`'s `OID` isn't
+  currently surfaced anywhere a cashier could reasonably type it in.
+- No inventory adjustment on return (a returned item isn't added back
+  to stock) — there's no inventory-quantity concept in the domain
+  model at all yet; that's Manage Inventory's job, still unstarted.
+
+**Alternatives Considered:**
+- *Reusing `Payment`/`CashPayment` for the refund* — rejected:
+  `amount_tendered` and the change-due calculation built into `Sale`
+  don't have a sensible meaning for money paid out, not in.
+- *Linking `SaleReturn` to its originating `Sale` now* — rejected as
+  too large a first slice; flagged as a clear, well-scoped follow-up
+  instead of quietly working around it.
+- *Building electronic refunds alongside cash in this same slice* —
+  rejected for the same reason Iteration 2 didn't add mobile
+  money/card in the same slice as cash: `IPaymentGatewayAdapter`
+  doesn't have a refund operation, and designing one properly (does it
+  reuse `authorize()`'s shape? does it need its own
+  `RefundResult`? how does `PaymentServiceProxy`'s offline-queue
+  behavior apply to a refund rather than a charge?) is real design
+  work that deserves its own slice, not a rushed addition here.

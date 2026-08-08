@@ -14,6 +14,8 @@ from supermarket_pos.domain.payment.mobile_money_payment import MobileMoneyPayme
 from supermarket_pos.domain.payment.payment_declined_error import PaymentDeclinedError
 from supermarket_pos.domain.product.product_catalog import ProductCatalog
 from supermarket_pos.domain.product.product_description import ProductDescription
+from supermarket_pos.domain.returns.cash_refund import CashRefund
+from supermarket_pos.domain.returns.sale_return import SaleReturn
 from supermarket_pos.domain.sales.sale import Sale
 
 if TYPE_CHECKING:
@@ -28,6 +30,16 @@ class LineItemResult:
     description: ProductDescription
     quantity: int
     running_total: Money
+
+
+@dataclass(frozen=True)
+class ReturnLineItemResult:
+    """Value object returned to the UI layer after enter_return_item()
+    — mirrors LineItemResult for the Handle Returns flow."""
+
+    description: ProductDescription
+    quantity: int
+    running_refund_total: Money
 
 
 class Register:
@@ -53,6 +65,10 @@ class Register:
     Proxy). Card payments are NOT proxied, so a card GatewayUnavailableError
     still propagates uncaught here, by design — a card gateway that
     can't be reached must fail the payment, not defer it.
+    Iteration-3: Handle Returns (cash-refund only for this slice — see
+    ARCHITECTURE.md) follows the same Controller shape as Process
+    Sale: start_return/enter_return_item/end_return/make_cash_refund
+    mirror make_new_sale/enter_item/end_sale/make_cash_payment.
     """
 
     def __init__(
@@ -64,6 +80,7 @@ class Register:
         self._store = store
         self._catalog = catalog
         self._current_sale: Optional[Sale] = None
+        self._current_return: Optional[SaleReturn] = None
         self._payment_gateway_factory = payment_gateway_factory or PaymentGatewayFactory.get_instance()
 
     def make_new_sale(self) -> None:
@@ -126,3 +143,31 @@ class Register:
         Store.sync_offline_payments()) once connectivity is believed
         to be restored."""
         return self._payment_gateway_factory.offline_queue
+
+    # --- Handle Returns (cash-refund only this slice) ---------------
+
+    def start_return(self) -> None:
+        self._current_return = SaleReturn()
+
+    def enter_return_item(self, item_id: str, quantity: int) -> ReturnLineItemResult:
+        description = self._catalog.get_product_description(item_id)
+        self._current_return.make_line_item(description, quantity)
+        return ReturnLineItemResult(
+            description=description,
+            quantity=quantity,
+            running_refund_total=self._current_return.get_total(),
+        )
+
+    def end_return(self) -> Money:
+        self._current_return.become_complete()
+        return self._current_return.get_total()
+
+    def make_cash_refund(self) -> Money:
+        refund_amount = self._current_return.get_total()
+        self._current_return.make_refund(CashRefund(refund_amount))
+        self._store.log_completed_return(self._current_return)
+        return refund_amount
+
+    @property
+    def current_return(self) -> Optional[SaleReturn]:
+        return self._current_return

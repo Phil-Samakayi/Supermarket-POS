@@ -281,3 +281,79 @@ def test_sync_offline_payments_leaves_still_unreachable_ones_queued(isolated_sto
     assert report.confirmed == ()
     assert report.has_outstanding_work
     assert len(register.offline_queue) == 1
+
+
+# --- Handle Returns (cash-refund only this slice) -------------------------
+
+def test_process_return_happy_path_produces_correct_refund_and_logs_return(store):
+    register = store.register
+    register.start_return()
+    register.enter_return_item("SKU-001", 1)
+
+    total = register.end_return()
+    assert total == Money("85.00")
+
+    refund = register.make_cash_refund()
+    assert refund == Money("85.00")
+    assert len(store.completed_returns) == 1
+
+
+def test_return_line_item_running_total_updates_after_each_item(store):
+    store.catalog.add_product(ProductDescription("SKU-002", "1L Cooking Oil", Money("65.50")))
+    register = store.register
+    register.start_return()
+
+    first = register.enter_return_item("SKU-001", 1)
+    assert first.running_refund_total == Money("85.00")
+
+    second = register.enter_return_item("SKU-002", 1)
+    assert second.running_refund_total == Money("150.50")
+
+
+def test_enter_return_item_unknown_item_id_raises_product_not_found(store):
+    register = store.register
+    register.start_return()
+
+    with pytest.raises(ProductNotFoundError):
+        register.enter_return_item("SKU-999", 1)
+
+
+def test_each_new_return_starts_with_a_clean_total(store):
+    register = store.register
+
+    register.start_return()
+    register.enter_return_item("SKU-001", 1)
+    register.end_return()
+    register.make_cash_refund()
+
+    register.start_return()
+    assert register.current_return.get_total() == Money("0.00")
+
+
+def test_end_return_with_no_items_raises(store):
+    register = store.register
+    register.start_return()
+
+    with pytest.raises(ValueError, match="no items"):
+        register.end_return()
+
+
+def test_returns_and_sales_are_tracked_independently(store):
+    """Ringing up a sale and processing a return in the same register
+    session must not interfere with each other's totals or logs."""
+    register = store.register
+
+    register.make_new_sale()
+    register.enter_item("SKU-001", 2)
+    register.end_sale()
+    register.make_cash_payment(Money("200.00"))
+
+    register.start_return()
+    register.enter_return_item("SKU-001", 1)
+    register.end_return()
+    register.make_cash_refund()
+
+    assert len(store.completed_sales) == 1
+    assert len(store.completed_returns) == 1
+    assert store.completed_sales[0].get_total() == Money("170.00")
+    assert store.completed_returns[0].get_total() == Money("85.00")

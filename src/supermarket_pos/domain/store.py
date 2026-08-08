@@ -1,13 +1,15 @@
 """Store: the root object created during the Start Up use case."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from supermarket_pos.domain.payment.gateway.offline_sync_queue import OfflineSyncReport
 from supermarket_pos.domain.payment.gateway.payment_gateway_factory import PaymentGatewayFactory
 from supermarket_pos.domain.product.product_catalog import ProductCatalog
 from supermarket_pos.domain.product.product_description import ProductDescription
 from supermarket_pos.domain.register import Register
+from supermarket_pos.persistence.completed_sale_mapper import CompletedSaleMapper
+from supermarket_pos.persistence.completed_sale_record import CompletedSaleRecord
 from supermarket_pos.persistence.persistence_facade import PersistenceFacade
 
 if TYPE_CHECKING:
@@ -31,6 +33,15 @@ class Store:
     a persistent object saving itself, Store is the coordinator here,
     not the domain objects. Without a facade (the default), Store
     behaves exactly as in Iterations 1-2: pure in-memory catalog.
+
+    Store also optionally accepts a CompletedSaleMapper. This is kept
+    deliberately separate from `completed_sales` (which is this
+    session's live Sale objects, in memory, reset on restart — used by
+    Register/tests as before) — `sale_history()` is the durable,
+    persisted, read-only view across all sessions, sourced as
+    CompletedSaleRecord snapshots rather than resurrected Sale objects.
+    See ARCHITECTURE.md for why those are intentionally not the same
+    thing.
     """
 
     def __init__(
@@ -39,6 +50,7 @@ class Store:
         address: str,
         payment_gateway_factory: Optional[PaymentGatewayFactory] = None,
         persistence_facade: Optional[PersistenceFacade] = None,
+        sale_history_mapper: Optional[CompletedSaleMapper] = None,
     ) -> None:
         self._name = name
         self._address = address
@@ -46,6 +58,7 @@ class Store:
         self._register = Register(self, self._catalog, payment_gateway_factory)
         self._completed_sales: list["Sale"] = []
         self._persistence_facade = persistence_facade
+        self._sale_history_mapper = sale_history_mapper
 
         if self._persistence_facade is not None:
             for description in self._persistence_facade.get_all(ProductDescription):
@@ -63,6 +76,18 @@ class Store:
 
     def log_completed_sale(self, sale: "Sale") -> None:
         self._completed_sales.append(sale)
+        if self._sale_history_mapper is not None:
+            self._sale_history_mapper.save(sale)
+
+    def sale_history(self) -> List[CompletedSaleRecord]:
+        """Durable, persisted history of every completed sale ever
+        logged through this mapper — this session and prior ones.
+        Empty if this Store was built without a sale_history_mapper.
+        Distinct from `completed_sales`: that's this session's live
+        Sale objects only, and resets on restart."""
+        if self._sale_history_mapper is None:
+            return []
+        return self._sale_history_mapper.get_all()
 
     def sync_offline_payments(self) -> OfflineSyncReport:
         """Replays every mobile money payment that was queued while

@@ -2,6 +2,7 @@ from supermarket_pos.domain.common.money import Money
 from supermarket_pos.domain.product.product_description import ProductDescription
 from supermarket_pos.domain.store import Store
 from supermarket_pos.persistence.sqlite_persistence_factory import build_sqlite_persistence_facade
+from supermarket_pos.persistence.sqlite_sale_history_factory import build_sqlite_sale_history_mapper
 
 
 def test_store_without_a_persistence_facade_is_purely_in_memory():
@@ -66,3 +67,76 @@ def test_store_exposes_name_and_address():
 
     assert store.name == "Lusaka Central Supermarket"
     assert store.address == "Cairo Road, Lusaka"
+
+
+# --- Sale history (CompletedSaleMapper) -----------------------------------
+
+def test_sale_history_is_empty_without_a_sale_history_mapper():
+    store = Store("Test Store", "Test Address")
+    store.catalog.add_product(ProductDescription("SKU-001", "2kg Mealie Meal", Money("85.00")))
+    register = store.register
+    register.make_new_sale()
+    register.enter_item("SKU-001", 1)
+    register.end_sale()
+    register.make_cash_payment(Money("100.00"))
+
+    assert store.sale_history() == []
+
+
+def test_completed_sale_is_persisted_and_shows_up_in_sale_history(tmp_path):
+    mapper = build_sqlite_sale_history_mapper(str(tmp_path / "store.db"))
+    store = Store("Test Store", "Test Address", sale_history_mapper=mapper)
+    store.catalog.add_product(ProductDescription("SKU-001", "2kg Mealie Meal", Money("85.00")))
+    register = store.register
+    register.make_new_sale()
+    register.enter_item("SKU-001", 2)
+    register.end_sale()
+    register.make_cash_payment(Money("200.00"))
+
+    history = store.sale_history()
+
+    assert len(history) == 1
+    assert history[0].total == Money("170.00")
+    assert history[0].payment_method == "cash"
+    assert history[0].change_due == Money("30.00")
+
+
+def test_sale_history_survives_a_restart(tmp_path):
+    db_path = str(tmp_path / "store.db")
+
+    first_store = Store(
+        "Test Store", "Test Address", sale_history_mapper=build_sqlite_sale_history_mapper(db_path)
+    )
+    first_store.catalog.add_product(ProductDescription("SKU-001", "2kg Mealie Meal", Money("85.00")))
+    register = first_store.register
+    register.make_new_sale()
+    register.enter_item("SKU-001", 1)
+    register.end_sale()
+    register.make_cash_payment(Money("100.00"))
+
+    # Fresh Store, as if the app restarted, wired to the same file.
+    second_store = Store(
+        "Test Store", "Test Address", sale_history_mapper=build_sqlite_sale_history_mapper(db_path)
+    )
+
+    history = second_store.sale_history()
+    assert len(history) == 1
+    assert history[0].total == Money("85.00")
+
+
+def test_completed_sales_property_is_unaffected_by_sale_history_mapper(tmp_path):
+    """completed_sales stays this session's live Sale objects,
+    regardless of whether persistence is wired up — the two concepts
+    are deliberately distinct (see Store's docstring)."""
+    mapper = build_sqlite_sale_history_mapper(str(tmp_path / "store.db"))
+    store = Store("Test Store", "Test Address", sale_history_mapper=mapper)
+    store.catalog.add_product(ProductDescription("SKU-001", "2kg Mealie Meal", Money("85.00")))
+    register = store.register
+    register.make_new_sale()
+    register.enter_item("SKU-001", 1)
+    register.end_sale()
+    register.make_cash_payment(Money("100.00"))
+
+    assert len(store.completed_sales) == 1
+    from supermarket_pos.domain.sales.sale import Sale
+    assert isinstance(store.completed_sales[0], Sale)

@@ -298,3 +298,108 @@ required zero changes.
   one-time assembly, so a plain function (`build_sqlite_persistence_facade`)
   is enough. Introducing a class here would be pattern-for-pattern's
   sake.
+
+---
+
+### Sale history persistence
+
+**Issue:** Following on from the product catalog, `Sale` (with its
+line items and payment) needed to survive a restart too — but `Sale`
+is a much bigger step than `ProductDescription`: it has a one-to-many
+relationship (line items) and a polymorphic `Payment`
+(`CashPayment` / `MobileMoneyPayment` / `CardPayment`), and Larman's
+Ch.38 covers the former (38.19) but never actually addresses the
+latter — 38.19 is titled "How to Represent Relationships in Tables"
+and covers one-to-one / one-to-many / many-to-many associations only;
+inheritance-to-table mapping isn't in this book at all.
+
+**Solution Summary:** Persist a read-only historical *snapshot*
+(`CompletedSaleRecord`) rather than attempt to reconstruct the live
+`Sale`/`Payment` object graph. One-to-many line items follow Larman's
+own 38.19 prescription exactly (a foreign-key associative table).
+Payment polymorphism is handled by a small, explicitly-scoped
+`isinstance` dispatch confined to the one mapper class responsible for
+all of this entity's SQL (consistent with 38.15).
+
+**Factors:**
+- `MobileMoneyPayment`/`CardPayment` hold a live
+  `IPaymentGatewayAdapter` collaborator (a runtime dependency, not
+  data) — there is no meaningful way to "reconstruct" one from a
+  database row, so attempting a full live-object round trip for
+  `Payment` doesn't just lack book guidance, it doesn't actually make
+  sense.
+- What Iteration 3's reporting requirement (still upcoming) actually
+  needs is historical, read-only sales data — not a resumable live
+  transaction.
+- `Store.completed_sales` (this session's live `Sale` objects, existing
+  since Iteration 1) must not change shape or behavior.
+
+**Solution:** `CompletedSaleRecord` / `CompletedSaleLineItemRecord` are
+new, persistence-facing value types — deliberately distinct from the
+domain's `Sale`/`SalesLineItem`. `CompletedSaleMapper.save(sale)` takes
+the live domain `Sale` (as `ProductDescriptionMapper.save()` takes a
+live `ProductDescription`) and translates it into two tables:
+`completed_sales` (one row per sale, `date_time`/`total`/
+`payment_method`/`payment_reference`/`amount_tendered`/`change_due`)
+and `completed_sale_line_items` (one row per line item, carrying a
+`sale_oid` foreign key back to its parent — exactly Larman's 38.19
+one-to-many prescription: "create an associative table that records
+the OIDs of each object in relationship"). `get()`/`get_all()` return
+`CompletedSaleRecord`, not a resurrected `Sale` — an intentional
+asymmetry with `save()`'s input type, so `CompletedSaleMapper` isn't
+forced into `ProductDescriptionMapper`'s symmetric `IMapper[T]` shape
+just for consistency's sake.
+
+Since `Sale` has no natural business key (unlike `ProductDescription`'s
+`item_id`), its `OID` is a generated `uuid.uuid4()` hex string — Larman
+explicitly allows this ("database sequence generators... to globally
+unique... and others" — 38.8).
+
+`Store` keeps `completed_sales` completely untouched (still this
+session's live `Sale` objects, in memory, reset on restart) and adds a
+clearly distinct `sale_history()` — the durable, persisted,
+cross-session view, sourced from `CompletedSaleMapper.get_all()`.
+`Store.log_completed_sale()` (already the single place a completed
+sale gets logged, since Iteration 1) now also calls
+`sale_history_mapper.save(sale)` when a mapper is present.
+
+**Motivation:** Naming the asymmetry rather than hiding it is more
+honest design than contorting `CompletedSaleMapper` to fit
+`ProductDescriptionMapper`'s shape, or worse, trying to make `Payment`
+reconstructible when its whole reason for existing (authorizing
+against a live adapter) has already happened and can't be replayed
+from stored data. This mirrors a judgment call Larman himself makes
+throughout the book: match the design to what the persisted data is
+actually *for*, not to an abstract ideal of full object-graph fidelity.
+
+**Unresolved Issues:**
+- The `isinstance` dispatch in `_payment_method_of()` /
+  `_payment_reference_of()` works cleanly for 3 known payment types.
+  A 4th type means editing this mapper directly. If payment types grow
+  substantially, a `PaymentSnapshot`-per-type value object (each
+  `Payment` subclass producing its own snapshot without knowing about
+  SQL) would scale better — not needed yet.
+- No reporting layer reads `sale_history()` yet — this slice only
+  proves the data survives and is retrievable; Iteration 3's actual
+  Reporting work is still a separate, not-yet-started item.
+- `CompletedSaleRecord` currently has no `get_by_date_range` or similar
+  query — `get_all()` returns everything, ordered by date. Fine at
+  current data volume; a reporting slice will likely need to add
+  filtered queries to the mapper.
+
+**Alternatives Considered:**
+- *Reconstruct a live `Sale` with a live `Payment` from storage* —
+  rejected: `Payment` subclasses need a live gateway adapter reference
+  that has no persisted equivalent; even setting that aside,
+  re-inflating a "completed" sale as though it were still open invites
+  bugs (could someone call `.make_payment()` on it again?).
+- *A `PersistentObject`-style base for `Sale`* — rejected for the same
+  reasons as the product catalog slice (Ch.17.12, Ch.38.20).
+- *Folding `CompletedSaleMapper` into `PersistenceFacade`'s
+  `{class: mapper}` dict* — rejected: the Facade's contract implies
+  `get_all(X)` returns things shaped like `X`; registering `Sale` to a
+  mapper that returns `CompletedSaleRecord` would violate that
+  implicit contract silently. Two small, honestly-scoped wiring
+  functions (`build_sqlite_persistence_facade`,
+  `build_sqlite_sale_history_mapper`) are clearer than one that lies
+  about its return shape.

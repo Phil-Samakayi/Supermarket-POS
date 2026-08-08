@@ -76,11 +76,21 @@ retroactively.
   completely persistence-ignorant; `Store` coordinates loading at
   Start Up and saving via the new `Store.add_product()`. See
   [ARCHITECTURE.md § Persistent product catalog](ARCHITECTURE.md#persistent-product-catalog).
-  Sale/line-item persistence (with real relationships — Ch.38.19) is
-  a separate, not-yet-started slice.
+- ✅ Sale history persistence: completed sales now survive a restart
+  via `CompletedSaleMapper`, following Ch.38.19's one-to-many table
+  design for line items. Deliberately persists a read-only
+  `CompletedSaleRecord` snapshot rather than reconstructing the live
+  `Sale`/`Payment` object graph — `Payment` subclasses hold a live
+  gateway-adapter collaborator with no persisted equivalent, and
+  Larman's book doesn't cover inheritance-to-table mapping at all. New
+  `Store.sale_history()` is the durable, cross-session view; the
+  existing `Store.completed_sales` is untouched (still this session's
+  live `Sale` objects only). See
+  [ARCHITECTURE.md § Sale history persistence](ARCHITECTURE.md#sale-history-persistence).
 - Handle Returns use case.
-- Reporting for Manager/Owner (sales and stock summaries).
+- Reporting for Manager/Owner (sales and stock summaries) — will read
+  from `Store.sale_history()`, not yet built.
 - Manage Inventory / Manage Users use cases.
 
-**Current test count:** 97/97 passing on a fresh install (as of the
-product-catalog persistence slice).
+**Current test count:** 108/108 passing on a fresh install (as of the
+sale-history persistence slice).

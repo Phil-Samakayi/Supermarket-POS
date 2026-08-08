@@ -596,3 +596,121 @@ exactly the shape a report needs.
   generalization for two report types; a purpose-built generator is
   simpler to read, test, and extend than a general query layer nobody
   has needed yet.
+
+---
+
+### Manage Inventory
+
+**Issue:** The iteration plan's Reporting item was explicitly scoped
+down to sales/returns because no quantity-on-hand concept existed
+anywhere in the domain model. Like Handle Returns and Reporting,
+Larman never designs a Manage Inventory use case for the POS case
+study — the only mention of inventory management at all is as a
+one-line feature bullet in a Vision-document example (Ch.7.7:
+"Inventory management: automatic reordering..."), not a use case, not
+a design.
+
+What the book *does* give, used here directly: the CRUD-use-case
+naming convention (Ch.6.15) — "A common exception to one use case per
+goal is to collapse CRUD... into one CRUD use case, idiomatically
+called Manage <X>" — which is exactly why this project's iteration
+plan already calls this "Manage Inventory" rather than four separate
+use cases.
+
+**Solution Summary:** A new `domain/inventory/` package
+(`StockLevel`, `Inventory`, `InventoryManager`) and a `StockLevelMapper`
+that — unlike the sale/return history mappers — fits
+`PersistenceFacade`'s existing symmetric contract cleanly, so it's
+registered directly in `build_sqlite_persistence_facade()` alongside
+`ProductDescriptionMapper` rather than needing its own wiring function.
+`InventoryManager` is a **separate Controller from `Register`**.
+
+**Factors:**
+- No worked design exists to follow — same situation as the last two
+  slices, so scope was chosen deliberately, not derived.
+- Quantity-on-hand changes at a completely different rate and for
+  different reasons than catalog data (name, price) — bolting it onto
+  the frozen `ProductDescription` value type would be a modeling
+  mismatch.
+- `StockLevel` — unlike `CompletedSaleRecord`/`CompletedReturnRecord`
+  — genuinely has a symmetric save/get shape and a natural key, so it
+  was worth checking whether it actually fit `PersistenceFacade`
+  rather than assuming every new mapper needs its own bespoke wiring.
+- Manage Inventory is a Manager/Owner activity — a different actor
+  from Register's Cashier-facing Process Sale/Handle Returns.
+
+**Solution:** `StockLevel` is a small frozen value type (`item_id`,
+`quantity_on_hand`); `Inventory` is a GRASP Information Expert
+collection (mirrors `ProductCatalog`'s in-memory-dict shape) enforcing
+one invariant — quantity can never go negative — via `increase()`
+(receiving stock) and `adjust()` (manual correction, may be negative,
+raises if it would go below zero). `InventoryManager` is the GRASP
+Controller for the CRUD operations
+(`receive_stock`/`adjust_stock`/`get_stock_level`/`low_stock_items`),
+constructed as its own class rather than added to `Register` — Larman's
+own Controller guidance (Ch.17) allows either a facade controller for
+the whole system or one per use case/session, and a different actor
+performing the use case is a clean, book-grounded reason to choose the
+latter here, in contrast to Register already covering two Cashier
+use cases together. `StockLevelMapper` follows `ProductDescriptionMapper`
+almost exactly — a genuine confirmation that the earlier
+Facade-vs-standalone-mapper decision (see Sale history persistence,
+above) was about shape, not an arbitrary split: `StockLevel` fits the
+Facade because it has the same shape as `ProductDescription`; `Sale`
+doesn't because it doesn't.
+
+`Store` exposes the manager via `store.inventory`, and closes a gap
+named explicitly in the Reporting memo: `stock_summary_report()`
+combines `ProductCatalog.all_products()` (new — the catalog previously
+had no way to enumerate every product) with `InventoryManager`'s
+current quantities. This is a plain function
+(`build_stock_summary_report`), not a class like
+`SalesReportGenerator` — it combines two pieces of already-live state
+rather than aggregating many historical records, so it doesn't earn a
+class the way the sales report's summing/grouping/ranking logic does.
+
+**Motivation:** The separate-Controller decision is the one worth
+underlining: this project has, up to now, always extended `Register`
+for new Cashier-facing capability (mobile money, card, returns). This
+is the first slice where the same actor doesn't apply, and Larman's
+own Controller guidance gives a direct, non-arbitrary way to decide —
+not "does Register already exist" but "whose use case is this."
+
+**Unresolved Issues:**
+- **Stock is not automatically adjusted by Process Sale or Handle
+  Returns.** Selling or returning an item does not touch `Inventory`
+  at all in this slice — verified explicitly by a Store-level test.
+  This is a deliberate scope cut, not an oversight: wiring it in
+  properly means answering a real business-rule question first (does
+  a sale block on insufficient stock, warn, or allow overselling? at
+  what point in the flow — `enter_item`, or only at
+  `log_completed_sale`, after payment has already been taken?), and
+  that question deserves its own slice rather than a quiet addition
+  to `Store.log_completed_sale()`/`log_completed_return()`.
+- `low_stock_items()`/`stock_summary_report()`'s threshold is a single
+  global number, not configurable per product (a slow-moving item and
+  a fast-moving one likely want different thresholds in a real store).
+- No reordering/supplier concept (the one thing the book's own passing
+  mention of inventory management actually named — "automatic
+  reordering") — well beyond this slice's scope.
+
+**Alternatives Considered:**
+- *Adding `quantity_on_hand` as a mutable field on `ProductDescription`*
+  — rejected: would force removing `ProductDescription`'s immutability
+  (a deliberate property, since catalog data is stable) purely to
+  accommodate a value that changes constantly for unrelated reasons.
+- *Extending `Register` with inventory operations* — rejected: Manage
+  Inventory's actor (Manager/Owner) is different from Register's
+  (Cashier); a separate Controller class is the direct, book-grounded
+  answer, not just a tidiness preference.
+- *Auto-creating a StockLevel at 0 when a product is added to the
+  catalog* — rejected: decouples "this product exists in the catalog"
+  from "we currently stock it," which is realistic (a manager can add
+  a product before physical stock arrives) and consistent with how
+  Sale/Return history were kept decoupled from ProductCatalog too.
+- *Wiring automatic stock decrement/increment into `Store.log_completed_sale()`/
+  `log_completed_return()` in this same slice* — rejected as exactly
+  the kind of "obvious next step, quietly bundled in" that this
+  project has consistently avoided (see Handle Returns' and
+  Reporting's own Alternatives Considered for the same judgment call
+  made twice already). Flagged explicitly instead.

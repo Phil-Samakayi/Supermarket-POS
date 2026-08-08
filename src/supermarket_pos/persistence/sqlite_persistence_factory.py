@@ -9,10 +9,12 @@ than solving a real variation point. See ARCHITECTURE.md.
 """
 from __future__ import annotations
 
+from supermarket_pos.domain.inventory.stock_level import StockLevel
 from supermarket_pos.domain.product.product_description import ProductDescription
 from supermarket_pos.persistence.persistence_facade import PersistenceFacade
 from supermarket_pos.persistence.product_description_mapper import ProductDescriptionMapper
 from supermarket_pos.persistence.sqlite_connection import SQLiteConnection
+from supermarket_pos.persistence.stock_level_mapper import StockLevelMapper
 
 
 def build_sqlite_persistence_facade(db_path: str = "supermarket_pos.db") -> PersistenceFacade:
@@ -22,5 +24,6 @@ def build_sqlite_persistence_facade(db_path: str = "supermarket_pos.db") -> Pers
     return PersistenceFacade(
         {
             ProductDescription: ProductDescriptionMapper(connection),
+            StockLevel: StockLevelMapper(connection),
         }
     )

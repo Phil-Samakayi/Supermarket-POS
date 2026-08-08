@@ -27,5 +27,12 @@ class ProductCatalog:
         except KeyError:
             raise ProductNotFoundError(item_id) from None
 
+    def all_products(self) -> list[ProductDescription]:
+        """Every product currently in the catalog, ordered by item_id.
+        Added for Manage Inventory's stock summary report — the first
+        caller that needs to enumerate the whole catalog rather than
+        look up one item at a time."""
+        return [self._descriptions[item_id] for item_id in sorted(self._descriptions)]
+
     def __len__(self) -> int:
         return len(self._descriptions)

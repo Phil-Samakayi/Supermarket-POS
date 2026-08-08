@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
+from supermarket_pos.domain.inventory.inventory_manager import InventoryManager
 from supermarket_pos.domain.payment.gateway.offline_sync_queue import OfflineSyncReport
 from supermarket_pos.domain.payment.gateway.payment_gateway_factory import PaymentGatewayFactory
 from supermarket_pos.domain.product.product_catalog import ProductCatalog
@@ -16,6 +17,7 @@ from supermarket_pos.persistence.completed_sale_record import CompletedSaleRecor
 from supermarket_pos.persistence.persistence_facade import PersistenceFacade
 from supermarket_pos.reporting.sales_report import SalesSummaryReport, TopSellingItemReportRow
 from supermarket_pos.reporting.sales_report_generator import SalesReportGenerator
+from supermarket_pos.reporting.stock_report import StockSummaryReport, build_stock_summary_report
 
 if TYPE_CHECKING:
     from supermarket_pos.domain.returns.sale_return import SaleReturn
@@ -69,6 +71,7 @@ class Store:
         self._sale_history_mapper = sale_history_mapper
         self._return_history_mapper = return_history_mapper
         self._report_generator = SalesReportGenerator()
+        self._inventory_manager = InventoryManager(persistence_facade)
 
         if self._persistence_facade is not None:
             for description in self._persistence_facade.get_all(ProductDescription):
@@ -141,6 +144,13 @@ class Store:
         """Items ranked by quantity sold, from persisted sale history."""
         return self._report_generator.top_selling_items(self.sale_history(), limit, start, end)
 
+    def stock_summary_report(self, low_stock_threshold: int = 5) -> StockSummaryReport:
+        """Manage Inventory's read side: one row per catalog product
+        with its current on-hand quantity, flagged low-stock at or
+        below the threshold. Closes the gap flagged when Reporting was
+        first built — no quantity concept existed then."""
+        return build_stock_summary_report(self._catalog, self._inventory_manager, low_stock_threshold)
+
     @property
     def catalog(self) -> ProductCatalog:
         return self._catalog
@@ -148,6 +158,10 @@ class Store:
     @property
     def register(self) -> Register:
         return self._register
+
+    @property
+    def inventory(self) -> InventoryManager:
+        return self._inventory_manager
 
     @property
     def completed_sales(self) -> tuple["Sale", ...]:

@@ -103,11 +103,22 @@ retroactively.
   (GRASP Pure Fabrication) in a new `reporting/` package — a Technical
   Services partition per Larman Ch.13.6/13.7, sibling to `persistence/`.
   Built entirely from already-persisted `sale_history()`/
-  `return_history()`. **Stock summaries are explicitly not built** —
-  no inventory-quantity concept exists anywhere in the domain model
-  yet; that's Manage Inventory's job. See
+  `return_history()`. See
   [ARCHITECTURE.md § Reporting](ARCHITECTURE.md#reporting-salesreturns-only).
-- Manage Inventory / Manage Users use cases.
+- ✅ Manage Inventory: new `domain/inventory/` package (`StockLevel`,
+  `Inventory`, `InventoryManager`). `InventoryManager` is a **separate
+  Controller from `Register`** — different actor (Manager/Owner vs.
+  Cashier), per Larman's own Controller guidance (Ch.17). Exposed as
+  `store.inventory`. `StockLevelMapper` fits `PersistenceFacade`'s
+  existing symmetric contract cleanly (unlike the sale/return
+  mappers) and is registered alongside `ProductDescriptionMapper`.
+  Also closes the stock-summary gap flagged in the Reporting slice:
+  `Store.stock_summary_report()`. **Stock is deliberately NOT
+  auto-adjusted by Process Sale or Handle Returns yet** — a real
+  business-rule decision (block/warn/allow oversell?) that deserves
+  its own slice, not a quiet addition here. See
+  [ARCHITECTURE.md § Manage Inventory](ARCHITECTURE.md#manage-inventory).
+- Manage Users use case.
 
-**Current test count:** 145/145 passing on a fresh install (as of the
-sales/returns reporting slice).
+**Current test count:** 183/183 passing on a fresh install (as of the
+Manage Inventory slice).

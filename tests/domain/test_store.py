@@ -276,3 +276,58 @@ def test_top_selling_items_reflects_persisted_sale_history(tmp_path):
 
     assert rows[0].item_id == "SKU-001"
     assert rows[0].quantity_sold == 3
+
+
+# --- Manage Inventory --------------------------------------------------
+
+def test_receive_stock_via_store_inventory():
+    store = Store("Test Store", "Test Address")
+    store.catalog.add_product(ProductDescription("SKU-001", "2kg Mealie Meal", Money("85.00")))
+
+    store.inventory.receive_stock("SKU-001", 20)
+
+    assert store.inventory.get_stock_level("SKU-001") == 20
+
+
+def test_inventory_persists_when_store_has_a_persistence_facade(tmp_path):
+    facade = build_sqlite_persistence_facade(str(tmp_path / "store.db"))
+    store = Store("Test Store", "Test Address", persistence_facade=facade)
+    store.add_product(ProductDescription("SKU-001", "2kg Mealie Meal", Money("85.00")))
+
+    store.inventory.receive_stock("SKU-001", 20)
+
+    second_store = Store(
+        "Test Store", "Test Address", persistence_facade=build_sqlite_persistence_facade(str(tmp_path / "store.db"))
+    )
+    assert second_store.inventory.get_stock_level("SKU-001") == 20
+
+
+def test_stock_summary_report_combines_catalog_and_inventory():
+    store = Store("Test Store", "Test Address")
+    store.catalog.add_product(ProductDescription("SKU-001", "2kg Mealie Meal", Money("85.00")))
+    store.catalog.add_product(ProductDescription("SKU-002", "1L Cooking Oil", Money("65.50")))
+    store.inventory.receive_stock("SKU-001", 2)
+    store.inventory.receive_stock("SKU-002", 50)
+
+    report = store.stock_summary_report(low_stock_threshold=5)
+
+    by_id = {row.item_id: row for row in report.rows}
+    assert by_id["SKU-001"].is_low_stock is True
+    assert by_id["SKU-002"].is_low_stock is False
+
+
+def test_stock_summary_report_reflects_a_sale_only_if_manually_adjusted():
+    """Documented scope cut: this slice does not auto-decrement stock
+    on sale completion (see ARCHITECTURE.md) — ringing up a sale must
+    not, by itself, move the stock summary."""
+    store = Store("Test Store", "Test Address")
+    store.catalog.add_product(ProductDescription("SKU-001", "2kg Mealie Meal", Money("85.00")))
+    store.inventory.receive_stock("SKU-001", 20)
+
+    register = store.register
+    register.make_new_sale()
+    register.enter_item("SKU-001", 5)
+    register.end_sale()
+    register.make_cash_payment(Money("100.00"))
+
+    assert store.inventory.get_stock_level("SKU-001") == 20

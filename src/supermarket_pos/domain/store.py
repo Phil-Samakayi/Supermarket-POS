@@ -1,8 +1,10 @@
 """Store: the root object created during the Start Up use case."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
+from supermarket_pos.domain.payment.gateway.offline_sync_queue import OfflineSyncReport
+from supermarket_pos.domain.payment.gateway.payment_gateway_factory import PaymentGatewayFactory
 from supermarket_pos.domain.product.product_catalog import ProductCatalog
 from supermarket_pos.domain.register import Register
 
@@ -19,15 +21,28 @@ class Store:
     completed-sales log used for reporting in a later iteration.
     """
 
-    def __init__(self, name: str, address: str) -> None:
+    def __init__(
+        self,
+        name: str,
+        address: str,
+        payment_gateway_factory: Optional[PaymentGatewayFactory] = None,
+    ) -> None:
         self._name = name
         self._address = address
         self._catalog = ProductCatalog()
-        self._register = Register(self, self._catalog)
+        self._register = Register(self, self._catalog, payment_gateway_factory)
         self._completed_sales: list["Sale"] = []
 
     def log_completed_sale(self, sale: "Sale") -> None:
         self._completed_sales.append(sale)
+
+    def sync_offline_payments(self) -> OfflineSyncReport:
+        """Replays every mobile money payment that was queued while
+        its gateway was unreachable (PaymentServiceProxy, Larman
+        Ch.35). Intended as a manager-triggered action ("try to
+        reconnect now") — not called automatically, since Iteration 2
+        has no scheduling/session layer yet to decide when."""
+        return self._register.offline_queue.replay_all()
 
     @property
     def catalog(self) -> ProductCatalog:

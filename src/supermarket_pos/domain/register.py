@@ -8,6 +8,7 @@ from supermarket_pos.domain.common.money import Money
 from supermarket_pos.domain.payment.card_payment import CardPayment
 from supermarket_pos.domain.payment.cash_payment import CashPayment
 from supermarket_pos.domain.payment.electronic_payment import ElectronicPayment
+from supermarket_pos.domain.payment.gateway.offline_sync_queue import OfflineSyncQueue
 from supermarket_pos.domain.payment.gateway.payment_gateway_factory import PaymentGatewayFactory
 from supermarket_pos.domain.payment.mobile_money_payment import MobileMoneyPayment
 from supermarket_pos.domain.payment.payment_declined_error import PaymentDeclinedError
@@ -43,11 +44,15 @@ class Register:
     is preserved because adding a new provider only means editing the
     factory, not this class.
 
-    A GatewayUnavailableError (the gateway couldn't be reached at all)
-    is deliberately *not* caught here yet — that failover/offline-queue
-    behavior belongs to the PaymentServiceProxy planned next in
-    Iteration 2 (see docs/ITERATIONS.md), so it isn't duplicated once
-    that Proxy exists.
+    Iteration-2b: PaymentGatewayFactory now hands back mobile money
+    adapters wrapped in a PaymentServiceProxy (Larman Ch.35), which
+    fails over to an offline queue when a gateway is unreachable
+    instead of raising GatewayUnavailableError. Register did not need
+    to change at all to get this — it still just calls authorize()
+    without knowing whether a Proxy is involved (that's the point of
+    Proxy). Card payments are NOT proxied, so a card GatewayUnavailableError
+    still propagates uncaught here, by design — a card gateway that
+    can't be reached must fail the payment, not defer it.
     """
 
     def __init__(
@@ -113,3 +118,11 @@ class Register:
     @property
     def current_sale(self) -> Optional[Sale]:
         return self._current_sale
+
+    @property
+    def offline_queue(self) -> OfflineSyncQueue:
+        """The OfflineSyncQueue shared by this register's mobile money
+        PaymentServiceProxy instances. Replay it (e.g. via
+        Store.sync_offline_payments()) once connectivity is believed
+        to be restored."""
+        return self._payment_gateway_factory.offline_queue

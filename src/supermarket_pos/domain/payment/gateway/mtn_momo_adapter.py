@@ -43,6 +43,12 @@ class SimulatedMTNMoMoGatewayClient:
         self._simulate_outage = simulate_outage
         self._next_transaction_id = 1
 
+    def set_outage(self, active: bool) -> None:
+        """Flip connectivity mid-test (e.g. simulate a network drop
+        during a sale, then a recovery before replaying the offline
+        queue) without having to construct a fresh client."""
+        self._simulate_outage = active
+
     def request_payment(self, msisdn: str, amount: str) -> dict:
         if self._simulate_outage:
             raise ConnectionError("MTN Collections API unreachable")
@@ -60,6 +66,13 @@ class MTNMoMoAdapter(IPaymentGatewayAdapter):
 
     def __init__(self, client: MTNMoMoGatewayClient) -> None:
         self._client = client
+
+    @property
+    def client(self) -> MTNMoMoGatewayClient:
+        """Exposed for tests that need to toggle the underlying
+        client's simulated connectivity (see SimulatedMTNMoMoGatewayClient.
+        set_outage). Not intended for production collaborators."""
+        return self._client
 
     def authorize(self, amount: Money, payer_reference: str) -> AuthorizationResult:
         try:

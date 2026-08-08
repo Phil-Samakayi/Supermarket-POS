@@ -204,3 +204,97 @@ entirely contained behind the `IPaymentGatewayAdapter` interface.
 - *Applying the same offline-queue treatment to card payments* — 
   rejected on domain grounds (see Factors above), not a technical
   limitation.
+
+---
+
+## Iteration 3
+
+### Persistent product catalog
+
+**Issue:** `ProductCatalog` was an in-memory dict, seeded manually at
+every Start Up. Products need to survive a restart.
+
+**Solution Summary:** Larman's own persistence design (Ch.38) applied
+to one entity first: `PersistenceFacade` (Ch.38.9, Facade) delegating
+to a `ProductDescriptionMapper` (Ch.38.10, Database Mapper), keyed by
+an `OID` (Ch.38.8, Object Identifier), backed by SQLite.
+
+**Factors:**
+- `ProductDescription` and `ProductCatalog` (domain layer) must not
+  become coupled to SQL or any particular storage technology.
+- Existing tests and call sites — `store.catalog.add_product(...)`
+  used directly with no persistence involved — must keep working
+  unchanged.
+- Iteration 3 will eventually need to persist `Sale` too, which has
+  real object relationships (line items, payment); the design for one
+  entity now shouldn't make that harder later.
+
+**Solution:** All SQL for `ProductDescription` lives in exactly one
+class, `ProductDescriptionMapper` (Ch.38.15, "Consolidating and Hiding
+SQL Statements in One Class"). `PersistenceFacade` holds a
+`{class: mapper}` dict and delegates — a direct translation of
+Larman's own sketch in 38.9:
+
+```java
+class PersistenceFacade {
+    public Object get(OID oid, Class persistenceClass) {
+        IMapper mapper = (IMapper) mappers.get(persistenceClass);
+        return mapper.get(oid);
+    }
+}
+```
+
+`OID` wraps `item_id` directly rather than a synthetic surrogate key —
+`item_id` (e.g. "SKU-001") is already a natural, stable, unique
+business key, and Larman's own OID discussion (38.8) doesn't mandate a
+generated value, only "a consistent way to relate objects to records."
+
+Crucially, neither `ProductDescription` nor `ProductCatalog` were
+touched. `Store` is the coordinator: it optionally takes a
+`PersistenceFacade`, loads every saved product into the catalog at
+construction, and `Store.add_product()` is the new persistence-aware
+entry point that saves through the facade after adding to the
+in-memory catalog. `store.catalog.add_product()` still works exactly
+as before — it just doesn't persist, which is documented as
+deliberate, not a gap.
+
+**Motivation:** This directly implements Larman's own argument against
+the alternative (Ch.17, Information Expert contraindications; Ch.38.10)
+— had `ProductDescription` saved itself, or inherited from a
+`PersistentObject` superclass, it would gain "complex responsibilities
+in a new and unrelated area to what the object was previously
+responsible for," coupling it to SQL/JDBC-equivalent knowledge and
+violating both Low Coupling and High Cohesion. Larman's own words:
+"the class no longer focuses on just the pure application logic of
+'being a [product]'." Keeping `ProductCatalog`/`ProductDescription`
+persistence-ignorant means the domain layer's Iteration-1/2 tests
+required zero changes.
+
+**Unresolved Issues:**
+- Only `ProductDescription` is persisted so far; `Sale` (with its line
+  items and payment) needs its own mapper(s) and will have to address
+  Ch.38.19 ("How to Represent Relationships in Tables") — deferred to
+  a follow-up Iteration-3 slice.
+- No caching layer (Ch.38.14) — every `get`/`get_all` call hits SQLite
+  directly. Not a problem yet at this data volume; revisit if it
+  becomes one.
+- No lazy materialization / virtual proxy (Ch.38.18) — the whole
+  catalog loads at Start Up. Reasonable for a single-branch catalog;
+  would need revisiting for a much larger product range.
+
+**Alternatives Considered:**
+- *Direct mapping* (`ProductDescription` saves itself) — the option
+  Larman explicitly develops and then rejects (Ch.38.10); rejected
+  here for the same reasons.
+- *A `PersistentObject` superclass* that `ProductDescription` inherits
+  from for automatic persistence behavior — also explicitly discussed
+  and rejected by Larman (Ch.17.12, Ch.38.20): "highly couples domain
+  objects to a particular technical service and mixes different
+  architectural concerns."
+- *A class-based `PersistenceFactory`* mirroring `PaymentGatewayFactory`
+  — rejected as unnecessary: `PaymentGatewayFactory` earns its
+  Singleton/class shape by resolving between several runtime-selectable
+  providers; wiring one SQLite connection to one mapper is a fixed,
+  one-time assembly, so a plain function (`build_sqlite_persistence_facade`)
+  is enough. Introducing a class here would be pattern-for-pattern's
+  sake.

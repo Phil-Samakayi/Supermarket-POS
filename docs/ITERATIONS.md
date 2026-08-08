@@ -6,7 +6,7 @@ the system — not a throwaway prototype. Full design artifacts (fully-dressed
 use case, domain model, SSDs, design class diagram, layered architecture)
 are in [`Supermarket_POS_UseCase_UML.docx`](Supermarket_POS_UseCase_UML.docx).
 
-## Iteration 1 — Basics ✅ (current)
+## Iteration 1 — Basics ✅
 
 **Goal:** Prove the core domain model and the cash-only happy path of
 Process Sale (UC1), end to end.
@@ -33,7 +33,7 @@ Process Sale (UC1), end to end.
 - `python -m supermarket_pos.main` exercises Start Up + Process Sale
   end to end as a console demo.
 
-## Iteration 2 — More Patterns (in progress)
+## Iteration 2 — More Patterns ✅ (Observer deferred)
 
 Design rationale for each pattern decision below is recorded as a technical
 memo in [`ARCHITECTURE.md`](ARCHITECTURE.md) (Larman Ch.39's format:
@@ -55,20 +55,32 @@ retroactively.
   payments have no offline equivalent and still fail fast on an
   unreachable gateway. See
   [ARCHITECTURE.md § Offline payment failover](ARCHITECTURE.md#offline-payment-failover).
-- ⏳ `ISaleObserver` / `CheckoutScreen` (**Observer**) — deliberately
-  deferred until a real UI exists to subscribe. Introducing an Observer
-  before a genuine subscriber exists would be speculative future-proofing
+- ⏳ **Deliberately deferred, not dropped:** `ISaleObserver` /
+  `CheckoutScreen` (**Observer**). Decision made explicitly at the end of
+  Iteration 2 (not just left hanging): introducing an Observer before a
+  genuine subscriber exists would be speculative future-proofing
   (Larman's Protected Variations discussion warns against exactly this —
   "pick your battles" rather than engineering flexibility nothing yet
-  needs).
+  needs). Revisit when a real UI/view layer becomes a requirement —
+  likely alongside or after Iteration 3's reporting work, which is the
+  next point a second "consumer" of Sale's state naturally appears.
 
-**Current test count:** 78/78 passing on a fresh install (as of the
-Proxy/Command slice).
+**Final test count:** 78/78 passing on a fresh install.
 
-## Iteration 3 — Intermediate Topics (planned)
+## Iteration 3 — Intermediate Topics (in progress)
 
-- Persistence (database-backed `ProductCatalog` and sale history, replacing
-  the in-memory dict).
+- ✅ Persistence: `ProductCatalog` is now backed by SQLite for the
+  first entity (`ProductDescription`), via `PersistenceFacade` +
+  `ProductDescriptionMapper` (Larman Ch.38 — Facade, Database Mapper,
+  Object Identifier). `ProductDescription`/`ProductCatalog` remain
+  completely persistence-ignorant; `Store` coordinates loading at
+  Start Up and saving via the new `Store.add_product()`. See
+  [ARCHITECTURE.md § Persistent product catalog](ARCHITECTURE.md#persistent-product-catalog).
+  Sale/line-item persistence (with real relationships — Ch.38.19) is
+  a separate, not-yet-started slice.
 - Handle Returns use case.
 - Reporting for Manager/Owner (sales and stock summaries).
 - Manage Inventory / Manage Users use cases.
+
+**Current test count:** 97/97 passing on a fresh install (as of the
+product-catalog persistence slice).

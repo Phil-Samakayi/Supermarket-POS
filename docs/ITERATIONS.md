@@ -98,10 +98,16 @@ retroactively.
   with cash") and returns linked to their original sale are explicit,
   documented follow-ups, not built here. See
   [ARCHITECTURE.md § Handle Returns](ARCHITECTURE.md#handle-returns-cash-refund-only).
-- Reporting for Manager/Owner (sales and stock summaries) — will read
-  from `Store.sale_history()` / `Store.return_history()`, not yet
-  built.
+- ✅ Reporting: `Store.sales_summary_report()` and
+  `Store.top_selling_items()`, computed by a new `SalesReportGenerator`
+  (GRASP Pure Fabrication) in a new `reporting/` package — a Technical
+  Services partition per Larman Ch.13.6/13.7, sibling to `persistence/`.
+  Built entirely from already-persisted `sale_history()`/
+  `return_history()`. **Stock summaries are explicitly not built** —
+  no inventory-quantity concept exists anywhere in the domain model
+  yet; that's Manage Inventory's job. See
+  [ARCHITECTURE.md § Reporting](ARCHITECTURE.md#reporting-salesreturns-only).
 - Manage Inventory / Manage Users use cases.
 
-**Current test count:** 132/132 passing on a fresh install (as of the
-Handle Returns cash-refund slice).
+**Current test count:** 145/145 passing on a fresh install (as of the
+sales/returns reporting slice).

@@ -1,6 +1,7 @@
 """Store: the root object created during the Start Up use case."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
 from supermarket_pos.domain.payment.gateway.offline_sync_queue import OfflineSyncReport
@@ -13,6 +14,8 @@ from supermarket_pos.persistence.completed_return_record import CompletedReturnR
 from supermarket_pos.persistence.completed_sale_mapper import CompletedSaleMapper
 from supermarket_pos.persistence.completed_sale_record import CompletedSaleRecord
 from supermarket_pos.persistence.persistence_facade import PersistenceFacade
+from supermarket_pos.reporting.sales_report import SalesSummaryReport, TopSellingItemReportRow
+from supermarket_pos.reporting.sales_report_generator import SalesReportGenerator
 
 if TYPE_CHECKING:
     from supermarket_pos.domain.returns.sale_return import SaleReturn
@@ -65,6 +68,7 @@ class Store:
         self._persistence_facade = persistence_facade
         self._sale_history_mapper = sale_history_mapper
         self._return_history_mapper = return_history_mapper
+        self._report_generator = SalesReportGenerator()
 
         if self._persistence_facade is not None:
             for description in self._persistence_facade.get_all(ProductDescription):
@@ -115,6 +119,27 @@ class Store:
         reconnect now") — not called automatically, since Iteration 2
         has no scheduling/session layer yet to decide when."""
         return self._register.offline_queue.replay_all()
+
+    def sales_summary_report(
+        self, start: Optional[datetime] = None, end: Optional[datetime] = None
+    ) -> SalesSummaryReport:
+        """Manager/Owner reporting (Reporting Technical Service
+        partition, Larman Ch.13.6). Built entirely from persisted
+        sale_history()/return_history() — empty if this Store has no
+        history mappers wired up. ``start``/``end`` bound the report to
+        a date range; omit either for unbounded."""
+        return self._report_generator.summarize(
+            self.sale_history(), self.return_history(), start, end
+        )
+
+    def top_selling_items(
+        self,
+        limit: int = 5,
+        start: Optional[datetime] = None,
+        end: Optional[datetime] = None,
+    ) -> List[TopSellingItemReportRow]:
+        """Items ranked by quantity sold, from persisted sale history."""
+        return self._report_generator.top_selling_items(self.sale_history(), limit, start, end)
 
     @property
     def catalog(self) -> ProductCatalog:

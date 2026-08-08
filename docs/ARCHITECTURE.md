@@ -504,3 +504,95 @@ book itself doesn't walk through.
   `RefundResult`? how does `PaymentServiceProxy`'s offline-queue
   behavior apply to a refund rather than a charge?) is real design
   work that deserves its own slice, not a rushed addition here.
+
+---
+
+### Reporting (sales/returns only)
+
+**Issue:** The iteration plan named this item "Reporting for
+Manager/Owner (sales and stock summaries)." As with Handle Returns,
+Larman never designs a Reporting use case for the POS case study — no
+worked example exists to translate. What the book does give is an
+architectural anchor: Ch.13.6/13.7 (Layers and Partitions) names
+"Reporting" explicitly as its own Technical Services partition, a
+sibling to "Security" and — in this project's case — the "Persistence"
+partition already built.
+
+**Solution Summary:** A new `reporting/` package (sibling to
+`persistence/` and `domain/`, following the Ch.13.6 partition
+principle directly), containing a `SalesReportGenerator` (GRASP Pure
+Fabrication) that computes a `SalesSummaryReport` and a
+top-selling-items breakdown purely from `CompletedSaleRecord`/
+`CompletedReturnRecord` — the same persisted snapshots
+`sale_history()`/`return_history()` already produce. **Stock summaries
+are explicitly not built** — see Unresolved Issues.
+
+**Factors:**
+- No worked design exists to follow; scope needed to be chosen
+  deliberately, same situation as Handle Returns.
+- `ProductDescription` has no `quantity_on_hand` field, and nothing
+  else in the domain model tracks stock levels at all — a "stock
+  summary" report has no data to report on yet.
+- Whatever computes reports shouldn't need to know or care whether the
+  underlying records came from SQLite, a different database, or
+  anywhere at all — matching the same discipline already applied to
+  `ProductDescriptionMapper`/`CompletedSaleMapper`.
+
+**Solution:** `SalesReportGenerator` takes plain lists of
+`CompletedSaleRecord`/`CompletedReturnRecord` (not a `Store`, not a
+mapper, not a database connection) and returns immutable report value
+types (`SalesSummaryReport`, `TopSellingItemReportRow`) — this is
+exactly GRASP Pure Fabrication: a class invented purely to hold a
+computation responsibility that doesn't belong to any real-world
+domain concept, kept trivially unit-testable as a result (see the
+generator's tests — none of them touch SQLite at all). `Store` plays
+its now-familiar coordinator role: `sales_summary_report()` and
+`top_selling_items()` fetch `sale_history()`/`return_history()` and
+delegate to the generator, exactly mirroring how it already
+coordinates `PersistenceFacade`/`CompletedSaleMapper` without the
+domain objects knowing persistence exists.
+
+Both report methods accept optional `start`/`end` date bounds — a
+manager asking "how did we do this week" is a completely ordinary
+question this data already supports, at negligible extra design cost.
+
+**Motivation:** Reporting build on already-persisted data (sale/return
+history) that exists specifically because the last two slices went to
+the trouble of persisting read-only snapshots rather than live object
+graphs — that decision is what makes this slice this cheap. A report
+generator that needed to reconstruct live `Sale`/`Payment` objects
+just to sum up totals would have been needless extra coupling for no
+benefit; `CompletedSaleRecord.total`/`payment_method` were already
+exactly the shape a report needs.
+
+**Unresolved Issues:**
+- **Stock summaries are not built.** `ProductDescription` has no
+  quantity concept; Manage Inventory (still unstarted) would need to
+  introduce one before a stock-level report can mean anything. This
+  was flagged in the iteration plan before this slice started, not
+  discovered partway through.
+- No report currently distinguishes discounted vs. full-price revenue
+  — `CompletedSaleRecord.total` is already post-discount (Sale's
+  `ISalePricingStrategy` was applied before the record was saved), so
+  gross revenue reported here is genuinely what came in, but a manager
+  wanting to see "how much did we give away in discounts this month"
+  can't get that from `sales_summary_report()` yet — the discount
+  amount was never separately captured at save time. A reasonable
+  future addition, not built now.
+- No export/formatting layer (CSV, printable receipt-style summary) —
+  reports are Python value objects; presenting them is a UI concern
+  for whenever a real UI exists, same reasoning as Observer's
+  deferral.
+
+**Alternatives Considered:**
+- *`Store` computing report totals directly* — rejected: this is
+  exactly the "give responsibility to whoever has the data, without
+  checking for cohesion" trap Larman warns about in the Ch.17 Expert
+  contraindications discussion (previously cited for the persistence
+  slices) — `Store` already coordinates enough; a growing set of report
+  computations belongs in its own class.
+- *A generic query/filter API over the persistence mappers instead of
+  a purpose-built report generator* — rejected as premature
+  generalization for two report types; a purpose-built generator is
+  simpler to read, test, and extend than a general query layer nobody
+  has needed yet.

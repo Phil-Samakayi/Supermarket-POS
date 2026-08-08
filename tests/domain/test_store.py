@@ -208,3 +208,71 @@ def test_completed_returns_property_is_unaffected_by_return_history_mapper(tmp_p
     assert len(store.completed_returns) == 1
     from supermarket_pos.domain.returns.sale_return import SaleReturn
     assert isinstance(store.completed_returns[0], SaleReturn)
+
+
+# --- Reporting (SalesReportGenerator) --------------------------------------
+
+def test_sales_summary_report_reflects_sales_and_returns(tmp_path):
+    store = Store(
+        "Test Store",
+        "Test Address",
+        sale_history_mapper=build_sqlite_sale_history_mapper(str(tmp_path / "store.db")),
+        return_history_mapper=build_sqlite_return_history_mapper(str(tmp_path / "store.db")),
+    )
+    store.catalog.add_product(ProductDescription("SKU-001", "2kg Mealie Meal", Money("85.00")))
+    register = store.register
+
+    register.make_new_sale()
+    register.enter_item("SKU-001", 2)
+    register.end_sale()
+    register.make_cash_payment(Money("200.00"))
+
+    register.start_return()
+    register.enter_return_item("SKU-001", 1)
+    register.end_return()
+    register.make_cash_refund()
+
+    report = store.sales_summary_report()
+
+    assert report.sale_count == 1
+    assert report.return_count == 1
+    assert report.gross_revenue == Money("170.00")
+    assert report.total_refunds == Money("85.00")
+    assert report.net_revenue == Money("85.00")
+    assert report.revenue_by_payment_method == {"cash": Money("170.00")}
+
+
+def test_sales_summary_report_is_zeroed_without_any_history_mappers():
+    store = Store("Test Store", "Test Address")
+    store.catalog.add_product(ProductDescription("SKU-001", "2kg Mealie Meal", Money("85.00")))
+    register = store.register
+    register.make_new_sale()
+    register.enter_item("SKU-001", 1)
+    register.end_sale()
+    register.make_cash_payment(Money("100.00"))
+
+    report = store.sales_summary_report()
+
+    assert report.sale_count == 0
+    assert report.gross_revenue == Money("0.00")
+
+
+def test_top_selling_items_reflects_persisted_sale_history(tmp_path):
+    store = Store(
+        "Test Store",
+        "Test Address",
+        sale_history_mapper=build_sqlite_sale_history_mapper(str(tmp_path / "store.db")),
+    )
+    store.catalog.add_product(ProductDescription("SKU-001", "2kg Mealie Meal", Money("85.00")))
+    store.catalog.add_product(ProductDescription("SKU-002", "1L Cooking Oil", Money("65.50")))
+    register = store.register
+    register.make_new_sale()
+    register.enter_item("SKU-001", 3)
+    register.enter_item("SKU-002", 1)
+    register.end_sale()
+    register.make_cash_payment(Money("300.00"))
+
+    rows = store.top_selling_items()
+
+    assert rows[0].item_id == "SKU-001"
+    assert rows[0].quantity_sold == 3

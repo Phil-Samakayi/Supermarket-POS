@@ -33,19 +33,37 @@ Process Sale (UC1), end to end.
 - `python -m supermarket_pos.main` exercises Start Up + Process Sale
   end to end as a console demo.
 
-## Iteration 2 — More Patterns (planned)
+## Iteration 2 — More Patterns (in progress)
 
-- `ISalePricingStrategy` (**Strategy**) for discounts, replacing the plain
-  summation in `Sale.get_total()`.
-- `IPaymentGatewayAdapter` + `MTNMoMoAdapter` / `AirtelMoneyAdapter` /
+Design rationale for each pattern decision below is recorded as a technical
+memo in [`ARCHITECTURE.md`](ARCHITECTURE.md) (Larman Ch.39's format:
+Issue → Solution Summary → Factors → Solution → Motivation → Alternatives
+Considered), added iteration by iteration rather than written up
+retroactively.
+
+- ✅ `ISalePricingStrategy` (**Strategy**) for discounts, replacing the
+  plain summation in `Sale.get_total()`. See
+  [ARCHITECTURE.md § Pricing](ARCHITECTURE.md#pricing-discounts).
+- ✅ `IPaymentGatewayAdapter` + `MTNMoMoAdapter` / `AirtelMoneyAdapter` /
   `CardProcessorAdapter` (**Adapter**), selected via `PaymentGatewayFactory`
-  (**Factory**) — realizes UC1 extensions 9b/9c.
-- `PaymentServiceProxy` + `OfflineSyncQueue` (**Proxy** + **Command**) for
+  (**Factory**) — realizes UC1 extensions 9b/9c. See
+  [ARCHITECTURE.md § Payment gateway integration](ARCHITECTURE.md#payment-gateway-integration).
+- ✅ `PaymentServiceProxy` + `OfflineSyncQueue` (**Proxy** + **Command**) for
   the offline-first requirement (UC1 extension *a) — this is the project's
   top-ranked risk (unreliable power/internet) and the reason Proxy was
-  chosen over a simpler retry loop.
-- `ISaleObserver` / `CheckoutScreen` (**Observer**) once a real UI is
-  introduced, preserving Model-View Separation.
+  chosen over a simpler retry loop. Applied to mobile money only; card
+  payments have no offline equivalent and still fail fast on an
+  unreachable gateway. See
+  [ARCHITECTURE.md § Offline payment failover](ARCHITECTURE.md#offline-payment-failover).
+- ⏳ `ISaleObserver` / `CheckoutScreen` (**Observer**) — deliberately
+  deferred until a real UI exists to subscribe. Introducing an Observer
+  before a genuine subscriber exists would be speculative future-proofing
+  (Larman's Protected Variations discussion warns against exactly this —
+  "pick your battles" rather than engineering flexibility nothing yet
+  needs).
+
+**Current test count:** 78/78 passing on a fresh install (as of the
+Proxy/Command slice).
 
 ## Iteration 3 — Intermediate Topics (planned)
 

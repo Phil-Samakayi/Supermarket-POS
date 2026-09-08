@@ -97,12 +97,6 @@ class Store:
         self._completed_sales.append(sale)
         if self._sale_history_mapper is not None:
             self._sale_history_mapper.save(sale)
-        # Automatic stock adjustment (previously a documented scope cut).
-        # Policy: clamp at zero rather than block the sale.
-        for line in sale.line_items:
-            self._inventory_manager.decrease_for_sale(
-                line.description.item_id, line.quantity
-            )
 
     def sale_history(self) -> List[CompletedSaleRecord]:
         """Durable, persisted history of every completed sale ever

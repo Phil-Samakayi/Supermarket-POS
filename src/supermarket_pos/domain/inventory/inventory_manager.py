@@ -59,6 +59,20 @@ class InventoryManager:
     def low_stock_items(self, threshold: int = 5) -> List[str]:
         return self._inventory.items_at_or_below(threshold)
 
+    def decrease_for_sale(self, item_id: str, quantity: int) -> int:
+        """Called when a sale completes. Decreases stock (clamps at 0)
+        and persists the new level. Returns the new on-hand quantity."""
+        new_quantity = self._inventory.decrease(item_id, quantity)
+        self._persist(item_id, new_quantity)
+        return new_quantity
+
+    def increase_for_return(self, item_id: str, quantity: int) -> int:
+        """Called when a return completes. Increases stock and persists.
+        Returns the new on-hand quantity."""
+        new_quantity = self._inventory.increase(item_id, quantity)
+        self._persist(item_id, new_quantity)
+        return new_quantity
+
     def _persist(self, item_id: str, quantity: int) -> None:
         if self._persistence_facade is not None:
             self._persistence_facade.save(StockLevel(item_id, quantity))

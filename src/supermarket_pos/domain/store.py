@@ -112,6 +112,11 @@ class Store:
         self._completed_returns.append(sale_return)
         if self._return_history_mapper is not None:
             self._return_history_mapper.save(sale_return)
+        # Automatic stock adjustment: returned items go back into stock.
+        for line in sale_return.line_items:
+            self._inventory_manager.increase_for_return(
+                line.description.item_id, line.quantity
+            )
 
     def return_history(self) -> List[CompletedReturnRecord]:
         """Mirrors sale_history() for Handle Returns — durable,

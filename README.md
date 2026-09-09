@@ -1,81 +1,345 @@
-## Supermarket-POS
+# 🛒 Supermarket POS
 
-A Point-of-Sale system for a supermarket that streamlines checkout
-operations, manages inventory, tracks sales, and provides analytical
-insights for business growth.
+A Point-of-Sale system designed for supermarkets to streamline checkout operations, manage products and inventory, process payments, handle returns, track sales, and generate business reports.
 
-Built iteratively following the Unified Process, as described in Craig
-Larman's *Applying UML and Patterns*. Full design artifacts (fully-dressed
-use case, domain model, System Sequence Diagrams, design class diagram,
-layered architecture) are in
-[`docs/Supermarket_POS_UseCase_UML.docx`](docs/Supermarket_POS_UseCase_UML.docx);
-the iteration plan is in [`docs/ITERATIONS.md`](docs/ITERATIONS.md).
+The project is developed iteratively using the **Unified Process**, with an emphasis on object-oriented design, GRASP principles, GoF design patterns, persistence, testing, and maintainable software architecture.
 
-![Supermarket POS Screenshot](https://github.com/Phil-Samakayi/Supermarket-POS/blob/main/ChatGPT%20Image%20Mar%202%2C%202026%2C%2003_57_58%20AM.png?raw=true)
+## 📌 Project Status
 
-### Status
+**Iteration 3 — Complete ✅**
 
-**Iteration 1 (Basics)** — cash-only Process Sale happy path implemented
-and tested. See [`docs/ITERATIONS.md`](docs/ITERATIONS.md) for what's
-in scope now vs. planned for later iterations.
+The current implementation includes:
 
-### Tech Stack
+* Product catalog management
+* Cash sales processing
+* Multiple payment methods
+* Discounts and pricing strategies
+* Offline payment support
+* SQLite persistence
+* Sale history
+* Cash refunds and returns
+* Sales reporting
+* Inventory management
+* User management
+* User authentication
+* Automated unit testing
 
-- Python 3.10+
-- [pytest](https://docs.pytest.org/) for testing
-- Standard library only at runtime (no external dependencies yet)
+The current test suite contains **219 passing tests**.
 
-### Project Structure
+## ✨ Features
 
+### 🧾 Point of Sale
+
+* Create and process sales
+* Add products to a sale
+* Calculate line-item subtotals and sale totals
+* Complete cash payments
+* Calculate change due
+* Prevent invalid sale operations
+
+### 💳 Payment Processing
+
+The system supports different payment mechanisms through an extensible payment architecture:
+
+* Cash payments
+* Card payments
+* MTN Mobile Money
+* Airtel Money
+* Payment gateway adapters
+* Payment gateway factory
+* Offline payment handling
+
+The payment architecture uses the **Adapter**, **Factory**, **Proxy**, and **Command** patterns.
+
+### 💰 Pricing and Discounts
+
+Sales pricing is handled through a strategy-based design that allows different pricing and discount rules to be introduced without modifying the core `Sale` class.
+
+The project uses the **Strategy pattern** through `ISalePricingStrategy`.
+
+### 📦 Product and Inventory Management
+
+* Product catalog management
+* Product descriptions
+* Product lookup
+* Stock-level management
+* Inventory management
+* Stock summary reporting
+* Persistent product and inventory data
+
+### 🔄 Returns and Refunds
+
+The system supports:
+
+* Starting a return
+* Entering returned items
+* Completing a return
+* Cash refunds
+* Persistent return history
+
+### 📊 Reporting
+
+The system provides reporting functionality including:
+
+* Sales summaries
+* Return summaries
+* Top-selling products
+* Stock summaries
+* Persistent sales history
+* Persistent return history
+
+Reporting is implemented using a dedicated `SalesReportGenerator` to keep reporting responsibilities separate from core domain objects.
+
+### 👤 User Management and Authentication
+
+The system includes:
+
+* User management
+* User roles
+* Password hashing
+* User authentication
+* Separate user-management responsibilities
+* Authentication as a reusable service
+
+Passwords are protected using **PBKDF2-HMAC-SHA256** using Python's standard library.
+
+## 🏗️ Architecture and Design
+
+The project follows object-oriented design principles and makes use of **GRASP** and **GoF design patterns**.
+
+### GRASP Principles
+
+Examples implemented in the project include:
+
+* **Controller** — `Register`, `InventoryManager`, and `UserManager`
+* **Creator** — `Sale` creates `SalesLineItem`
+* **Information Expert** — `SalesLineItem` calculates its own subtotal
+* **Pure Fabrication** — `SalesReportGenerator`
+* **Polymorphism** — payment implementations
+* **Protected Variations** — interfaces and abstractions around variable payment and pricing behavior
+
+### Design Patterns
+
+The project currently includes:
+
+* **Strategy** — sale pricing and discounts
+* **Adapter** — payment gateway integrations
+* **Factory** — payment gateway selection
+* **Proxy** — offline payment handling
+* **Command** — offline synchronization queue
+* **Facade** — persistence services
+* **Data Mapper** — persistence of domain objects
+* **Object Identifier** — persistent object identification
+
+More detailed design decisions are documented in `docs/ARCHITECTURE.md`.
+
+## 🗄️ Persistence
+
+The application uses **SQLite** for persistent storage.
+
+Persistent information includes:
+
+* Product catalog data
+* Completed sales
+* Return history
+* Inventory and stock levels
+
+Persistence concerns are separated from the domain model using persistence facades and mapper classes.
+
+## 🛠️ Technology Stack
+
+| Technology                  | Purpose              |
+| --------------------------- | -------------------- |
+| **Python 3.10+**            | Programming language |
+| **SQLite**                  | Persistent database  |
+| **pytest**                  | Automated testing    |
+| **Python Standard Library** | Runtime dependencies |
+
+The project currently has no external runtime dependencies.
+
+## 📂 Project Structure
+
+```text
+Supermarket-POS/
+│
+├── src/
+│   └── supermarket_pos/
+│       ├── main.py
+│       │
+│       └── domain/
+│           ├── store.py
+│           ├── register.py
+│           ├── cashier.py
+│           │
+│           ├── common/
+│           │   └── money.py
+│           │
+│           ├── product/
+│           │   ├── product_description.py
+│           │   ├── product_catalog.py
+│           │   └── exceptions.py
+│           │
+│           ├── sales/
+│           │   ├── sale.py
+│           │   └── sales_line_item.py
+│           │
+│           ├── payment/
+│           │   ├── payment.py
+│           │   └── cash_payment.py
+│           │
+│           ├── inventory/
+│           ├── persistence/
+│           ├── reporting/
+│           └── users/
+│
+├── tests/
+│   └── domain/
+│
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── ITERATIONS.md
+│   └── Supermarket_POS_UseCase_UML.docx
+│
+├── pyproject.toml
+└── README.md
 ```
-src/supermarket_pos/
-├── main.py                        # Iteration-1 console demo (Start Up + Process Sale)
-└── domain/
-    ├── store.py                   # Creator of Register / ProductCatalog
-    ├── register.py                # GRASP Controller for Process Sale
-    ├── cashier.py
-    ├── common/
-    │   └── money.py                # Decimal-backed Money value type
-    ├── product/
-    │   ├── product_description.py
-    │   ├── product_catalog.py     # Information Expert for product lookups
-    │   └── exceptions.py
-    ├── sales/
-    │   ├── sale.py
-    │   └── sales_line_item.py
-    └── payment/
-        ├── payment.py              # Abstract superclass (Polymorphism)
-        └── cash_payment.py
 
-tests/domain/
-├── common/test_money.py
-├── payment/test_cash_payment.py
-├── sales/test_sale.py
-└── test_register.py
-```
+## 🚀 Getting Started
 
-### Setup
+### Prerequisites
+
+Make sure you have:
+
+* Python **3.10 or later**
+* Git
+
+### 1. Clone the Repository
 
 ```bash
+git clone https://github.com/Phil-Samakayi/Supermarket-POS.git
+cd Supermarket-POS
+```
+
+### 2. Create a Virtual Environment
+
+#### Windows
+
+```powershell
 python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+.venv\Scripts\activate
+```
+
+#### macOS / Linux
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+### 3. Install the Project
+
+```bash
 pip install -e ".[dev]"
 ```
 
-### Run
+### 4. Run the Application
 
 ```bash
 python -m supermarket_pos.main
-# or, once installed:
+```
+
+You can also run:
+
+```bash
 supermarket-pos
 ```
 
-### Test
+## 🧪 Running Tests
+
+Run the complete test suite with:
 
 ```bash
 pytest
 ```
 
-### Team
+The current implementation has **219 passing tests**.
 
-CSC4630 — Group 28
+## 📚 Documentation
+
+Additional project documentation is available in the `docs/` directory.
+
+### Architecture Documentation
+
+`docs/ARCHITECTURE.md`
+
+Contains important architectural and design decisions, including the problems considered, selected solutions, motivations, and alternatives.
+
+### Iteration Plan
+
+`docs/ITERATIONS.md`
+
+Documents the development process and functionality delivered during each iteration.
+
+### UML Documentation
+
+`docs/Supermarket_POS_UseCase_UML.docx`
+
+Contains the project's UML and design artifacts.
+
+## 🔄 Development Approach
+
+The project follows an **iterative Unified Process** approach.
+
+Each iteration delivers a tested and integrated slice of functionality.
+
+### Iteration 1 — Basics ✅
+
+Implemented the core Process Sale use case and cash-only happy path.
+
+### Iteration 2 — Design Patterns ✅
+
+Introduced:
+
+* Strategy-based pricing
+* Payment gateway adapters
+* Factory-based gateway selection
+* Offline payment handling
+* Command-based synchronization
+
+### Iteration 3 — Intermediate Topics ✅
+
+Implemented:
+
+* Product persistence
+* Sale history persistence
+* Returns and cash refunds
+* Sales reporting
+* Inventory management
+* User management
+* Authentication
+
+## 🎯 Future Enhancements
+
+Potential future improvements include:
+
+* Electronic refunds
+* Linking returns to their original sales
+* Automatic stock adjustment after sales
+* Automatic stock adjustment after returns
+* Making authentication a mandatory precondition for system operations
+* Further development of the user interface
+* Additional payment and business rules
+
+## 👥 Team
+
+**CSC4630 — Group 28**
+
+## 📄 License
+
+This project is maintained as an academic software engineering project.
+
+---
+
+## 🔗 Repository
+
+[Supermarket-POS on GitHub](https://github.com/Phil-Samakayi/Supermarket-POS)

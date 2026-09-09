@@ -159,49 +159,85 @@ The project currently has no external runtime dependencies.
 
 ## 📂 Project Structure
 
-```text
-Supermarket-POS/
+src/supermarket_pos/
+
+├── main.py                          # Entry point (launches desktop app)
 │
-├── src/
-│   └── supermarket_pos/
-│       ├── main.py
-│       │
-│       └── domain/
-│           ├── store.py
-│           ├── register.py
-│           ├── cashier.py
-│           │
-│           ├── common/
-│           │   └── money.py
-│           │
-│           ├── product/
-│           │   ├── product_description.py
-│           │   ├── product_catalog.py
-│           │   └── exceptions.py
-│           │
-│           ├── sales/
-│           │   ├── sale.py
-│           │   └── sales_line_item.py
-│           │
-│           ├── payment/
-│           │   ├── payment.py
-│           │   └── cash_payment.py
-│           │
-│           ├── inventory/
-│           ├── persistence/
-│           ├── reporting/
-│           └── users/
+├── domain/
+│   ├── store.py                     # Root coordinator
+│   ├── register.py                  # Cashier Controller (Process Sale + Returns)
+│   ├── cashier.py
+│   │
+│   ├── common/
+│   │   └── money.py
+│   │
+│   ├── product/
+│   │   ├── product_description.py
+│   │   ├── product_catalog.py
+│   │   └── exceptions.py
+│   │
+│   ├── sales/
+│   │   ├── sale.py
+│   │   ├── sales_line_item.py
+│   │   └── sale_observer.py         # Observer interface
+│   │
+│   ├── payment/
+│   │   ├── payment.py
+│   │   ├── cash_payment.py
+│   │   ├── electronic_payment.py
+│   │   ├── mobile_money_payment.py
+│   │   ├── card_payment.py
+│   │   ├── payment_declined_error.py
+│   │   └── gateway/
+│   │       ├── payment_gateway_adapter.py
+│   │       ├── payment_gateway_factory.py
+│   │       ├── mtn_momo_adapter.py
+│   │       ├── airtel_money_adapter.py
+│   │       ├── card_processor_adapter.py
+│   │       ├── payment_service_proxy.py
+│   │       ├── offline_sync_queue.py
+│   │       └── ...
+│   │
+│   ├── returns/
+│   │   ├── sale_return.py
+│   │   ├── returned_line_item.py
+│   │   └── cash_refund.py
+│   │
+│   ├── inventory/
+│   │   ├── inventory.py
+│   │   ├── inventory_manager.py
+│   │   └── stock_level.py
+│   │
+│   ├── pricing/
+│   │   ├── sale_pricing_strategy.py
+│   │   ├── full_pricing_strategy.py
+│   │   └── percentage_discount_pricing_strategy.py
+│   │
+│   └── users/
+│       ├── user.py
+│       ├── user_role.py
+│       ├── user_manager.py
+│       ├── authentication_service.py
+│       ├── password_hasher.py
+│       └── exceptions.py
 │
-├── tests/
-│   └── domain/
+├── persistence/                     # Technical Service
+│   ├── persistence_facade.py
+│   ├── product_description_mapper.py
+│   ├── completed_sale_mapper.py
+│   ├── completed_return_mapper.py
+│   ├── stock_level_mapper.py
+│   ├── user_mapper.py
+│   └── ...
 │
-├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── ITERATIONS.md
-│   └── Supermarket_POS_UseCase_UML.docx
+├── reporting/                       # Technical Service
+│   ├── sales_report.py
+│   ├── sales_report_generator.py
+│   └── stock_report.py
 │
-├── pyproject.toml
-└── README.md
+└── ui/                              # New UI layer
+├── __init__.py
+└── desktop_app.py               # Full desktop application
 ```
 
 ## 🚀 Getting Started

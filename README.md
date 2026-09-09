@@ -148,174 +148,110 @@ Persistence concerns are separated from the domain model using persistence facad
 
 ## 🛠️ Technology Stack
 
-| Technology                  | Purpose              |
-| --------------------------- | -------------------- |
-| **Python 3.10+**            | Programming language |
-| **SQLite**                  | Persistent database  |
-| **pytest**                  | Automated testing    |
-| **Python Standard Library** | Runtime dependencies |
+| Technology                  | Purpose                          |
+| ---------------------------- | -------------------------------- |
+| **Python 3.10+**            | Programming language             |
+| **SQLite**                  | Persistent database              |
+| **pytest**                  | Automated testing                |
+| **FastAPI + uvicorn**       | Web application (`api/`)         |
+| **Tkinter**                 | Desktop application (`ui/`)      |
+| **Python Standard Library** | Everything else                  |
 
-The project currently has no external runtime dependencies.
+FastAPI and uvicorn (the web application's HTTP framework and server)
+are the project's only external runtime dependencies — everything
+through Iteration 3 (the domain, persistence, and reporting layers)
+remains standard-library-only by deliberate design; see
+`docs/ARCHITECTURE.md` for the reasoning.
 
 ## 📂 Project Structure
 
+```text
 src/supermarket_pos/
-
 ├── main.py                          # Entry point (launches desktop app)
-
 │
-
 ├── domain/
-
 │   ├── store.py                     # Root coordinator
-
 │   ├── register.py                  # Cashier Controller (Process Sale + Returns)
-
 │   ├── cashier.py
-
 │   │
-
 │   ├── common/
-
 │   │   └── money.py
-
 │   │
-
 │   ├── product/
-
 │   │   ├── product_description.py
-
 │   │   ├── product_catalog.py
-
 │   │   └── exceptions.py
-
 │   │
-
 │   ├── sales/
-
 │   │   ├── sale.py
-
 │   │   ├── sales_line_item.py
-
 │   │   └── sale_observer.py         # Observer interface
-
 │   │
-
 │   ├── payment/
-
 │   │   ├── payment.py
-
 │   │   ├── cash_payment.py
-
 │   │   ├── electronic_payment.py
-
 │   │   ├── mobile_money_payment.py
-
 │   │   ├── card_payment.py
-
 │   │   ├── payment_declined_error.py
-
 │   │   └── gateway/
-
 │   │       ├── payment_gateway_adapter.py
-
 │   │       ├── payment_gateway_factory.py
-
 │   │       ├── mtn_momo_adapter.py
-
 │   │       ├── airtel_money_adapter.py
-
 │   │       ├── card_processor_adapter.py
-
 │   │       ├── payment_service_proxy.py
-
 │   │       ├── offline_sync_queue.py
-
 │   │       └── ...
-
 │   │
-
 │   ├── returns/
-
 │   │   ├── sale_return.py
-
 │   │   ├── returned_line_item.py
-
 │   │   └── cash_refund.py
-
 │   │
-
 │   ├── inventory/
-
 │   │   ├── inventory.py
-
 │   │   ├── inventory_manager.py
-
 │   │   └── stock_level.py
-
 │   │
-
 │   ├── pricing/
-
 │   │   ├── sale_pricing_strategy.py
-
 │   │   ├── full_pricing_strategy.py
-
 │   │   └── percentage_discount_pricing_strategy.py
-
 │   │
-
 │   └── users/
-
 │       ├── user.py
-
 │       ├── user_role.py
-
 │       ├── user_manager.py
-
 │       ├── authentication_service.py
-
 │       ├── password_hasher.py
-
 │       └── exceptions.py
-
 │
-
 ├── persistence/                     # Technical Service
-
 │   ├── persistence_facade.py
-
 │   ├── product_description_mapper.py
-
 │   ├── completed_sale_mapper.py
-
 │   ├── completed_return_mapper.py
-
 │   ├── stock_level_mapper.py
-
 │   ├── user_mapper.py
-
 │   └── ...
-
 │
-
 ├── reporting/                       # Technical Service
-
 │   ├── sales_report.py
-
 │   ├── sales_report_generator.py
-
 │   └── stock_report.py
-
 │
+├── api/                              # Web application (FastAPI)
+│   └── app.py                       # Process Sale over HTTP + embedded frontend
+│
+└── ui/                               # Desktop application (Tkinter)
+    ├── __init__.py
+    └── desktop_app.py               # Full desktop application
 
-└── ui/                              # New UI layer
+tests/   # mirrors src/ 1:1 — one test module per production module
+```
 
-├── __init__.py
 
-└── desktop_app.py               # Full desktop application
-
-## 🚀 Getting Started
 
 ### Prerequisites
 
